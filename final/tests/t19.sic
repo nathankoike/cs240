@@ -1,0 +1,6 @@
+. Weight: 1
+. Extended mode, indexed
+start	0
+first:	+lda	count
+count:	resw	1
+end	first

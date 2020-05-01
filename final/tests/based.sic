@@ -1,0 +1,4 @@
+enter: start 10000
+base 65542
+add 65542, x
+nobase

@@ -1,0 +1,130 @@
+Microsoft (R) Macro Assembler Version 6.11		    02/03/19 20:50:32
+data							     Page 1 - 1
+
+
+				TITLE data
+
+				INCLUDE cs240.inc
+			      C .NOLIST
+			      C .LIST
+			      C 
+				.8086
+
+ 0000				.data
+ 0000 30			testByte    BYTE    "0"
+ 0001 FF			testSByte   SBYTE   -1
+ 0002 0000			testWord    WORD    0
+ 0004 FF00			testSWord   SWORD   -256
+ 0006 00010000			testDWord   DWORD   65536
+ 000A FFFFFEFF			testSDword  SDWORD  -257
+ 000E FFFFFFFFFFFF		testFWord   FWORD   0FFFFFFFFFFFFh
+ 0014				testQWord   QWord   0FFFFFFFFFFFFFFFFh
+       FFFFFFFFFFFFFFFF
+ 001C				testTByte   TBYTE   8000000000000001
+       0000001C6BF526340001
+ 0026 3FC00000			testReal4   Real4   1.5
+ 002A				testReal8   Real8   3.2E-260
+       0A0F7D228322BAF5
+ 0032				testReal10  Real10  4.6E+4096
+       7527E1D52B1C853F14BF
+
+ 0000				.code
+ 0000				main PROC
+ 0000  1E			     push DS
+ 0001  50			     push AX
+
+ 0002  B8 ---- R		     mov AX, @data
+ 0005  8E D8			     mov DS, AX
+
+ 0007  58			     pop AX
+
+				     ; move the start location of the data into DX for DumpMem
+ 0008  BA 0000 R		     mov DX, OFFSET testByte
+
+				     ; set CX to be 60 so that 60 bytes get displayed
+ 000B  B9 003C			     mov CX, 60
+
+ 000E  E8 0000 E		     call DumpMem
+ 0011  E8 0000 E		     call NewLine
+
+ 0014  1F			     pop DS
+
+ 0015  B8 4C00			     mov AX, 4C00h
+ 0018  CD 21			     int 21h
+ 001A				main ENDP
+				END main
+Microsoft (R) Macro Assembler Version 6.11		    02/03/19 20:50:32
+data							     Symbols 2 - 1
+
+
+
+
+Segments and Groups:
+
+                N a m e                 Size     Length   Align   Combine Class
+
+DGROUP . . . . . . . . . . . . .	GROUP
+_DATA  . . . . . . . . . . . . .	16 Bit	 003C	  Word	  Public  'DATA'	
+STACK  . . . . . . . . . . . . .	16 Bit	 0200	  Para	  Stack	  'STACK'	 
+_TEXT  . . . . . . . . . . . . .	16 Bit	 001A	  Word	  Public  'CODE'	
+
+
+Procedures,  parameters and locals:
+
+                N a m e                 Type     Value    Attr
+
+DumpLongRegs . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+DumpMem  . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+DumpRegs . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+NewLine  . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+PrintVersion . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadChar . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadHexByte  . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadHexDigit . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadHexWord  . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadInt  . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadLine . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadUInt . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+SkipToEOL  . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+TraceRegisterChanges . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+Version  . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteBit . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteChar  . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteHexByte . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteHexDigit  . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteHexLong . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteHexWord . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteInt . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteString  . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteUInt  . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+main . . . . . . . . . . . . . .	P Near	 0000	  _TEXT	Length= 001A Public STDCALL
+
+
+Symbols:
+
+                N a m e                 Type     Value    Attr
+
+@CodeSize  . . . . . . . . . . .	Number	 0000h	 
+@DataSize  . . . . . . . . . . .	Number	 0000h	 
+@Interface . . . . . . . . . . .	Number	 0003h	 
+@Model . . . . . . . . . . . . .	Number	 0002h	 
+@code  . . . . . . . . . . . . .	Text   	 _TEXT
+@data  . . . . . . . . . . . . .	Text   	 DGROUP
+@fardata?  . . . . . . . . . . .	Text   	 FAR_BSS
+@fardata . . . . . . . . . . . .	Text   	 FAR_DATA
+@stack . . . . . . . . . . . . .	Text   	 DGROUP
+testByte . . . . . . . . . . . .	Byte	 0000	  _DATA	
+testDWord  . . . . . . . . . . .	DWord	 0006	  _DATA	
+testFWord  . . . . . . . . . . .	FWord	 000E	  _DATA	
+testQWord  . . . . . . . . . . .	QWord	 0014	  _DATA	
+testReal10 . . . . . . . . . . .	TWord	 0032	  _DATA	
+testReal4  . . . . . . . . . . .	DWord	 0026	  _DATA	
+testReal8  . . . . . . . . . . .	QWord	 002A	  _DATA	
+testSByte  . . . . . . . . . . .	Byte	 0001	  _DATA	
+testSDword . . . . . . . . . . .	DWord	 000A	  _DATA	
+testSWord  . . . . . . . . . . .	Word	 0004	  _DATA	
+testTByte  . . . . . . . . . . .	TWord	 001C	  _DATA	
+testWord . . . . . . . . . . . .	Word	 0002	  _DATA	
+
+	   0 Warnings
+	   0 Errors

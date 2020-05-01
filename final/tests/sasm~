@@ -1,0 +1,148 @@
+#!/usr/bin/python
+"""
+Name: Nate Koike
+Proj: Final Project
+Desc: Make an assembler for the SIC/XE programming langauge
+"""
+
+import sys
+
+def printTable(table):
+    ''' print the symbol table associated with the program '''
+    print("SYMBOLS:")
+    for symbol in table:
+        print symbol[0].upper() + ':',
+        print symbol[1]
+
+def printLine(line):
+    for term in line:
+        print term,
+
+def pass1(prog):
+    ''' generate a symbol table for the program given the program as a list '''
+    print("Pass 1:")
+
+    started = False # this marks whether or not start is already defined
+    line_count = 0 # this is the current line of the program
+    pc = 0 # this is the program counter and will need to be in hex
+
+    table = [] # this will hold all of the symbols in the program
+
+    # read all the lines in the file and look for symbols or errors
+    # retun with an error if there is an error, adding all symbols along the way
+    for sloc in prog:
+        line_count += 1
+
+        # account for a comment spanning an entire line
+        if sloc[0][0] == '.':
+            continue
+
+        # start is a directive and has no bearing on the pc other than to change
+        # its base value, so we need to handle it separately
+        if "start" in sloc:
+            # start must always be in the first sloc
+            if pc > 0:
+                print(str("ERROR ON LINE " + str(line_count) + ':'))
+                printLine(sloc) # print the line properly
+                print('') # add the newline at the end
+                print('')
+                print("start encountered after first line")
+                exit(1) # exit with an error
+
+            # we cannot redefine start
+            if started:
+                print("ERROR ON LINE", str(line_count) + ':')
+                printLine(sloc)
+                print('')
+                print("start has already been defined")
+                exit(1) # exit with an error
+
+            # check to make sure the last argument is valid
+            new_pc = sloc[-1]
+            if new_pc.lower() == 'start':
+                new_pc = '0' # without an extra argument, the argument is 0
+
+            # make sure we have a hex value
+            try:
+                pc = int(new_pc, 16)
+                pc = 0
+            except:
+                print("ERROR ON LINE " + str(line_count) + ':')
+                printLine(sloc)
+                print('')
+                print(str(new_pc) + " is not a valid hex number")
+                exit(1) # exit with an error
+
+            # the largest number we can accomodate here is a 4-digit hex value
+            if len((str(new_pc))) > 4:
+                print("ERROR ON LINE " + str(line_count) + ':')
+                printLine(sloc)
+                print('')
+                print("hex value is too large")
+                exit(1) # exit with an error
+
+            # allow for start to have no arguments, this is not done yet
+            pc = int(new_pc, 16)
+
+            # handle the line starting with a symbol
+            if ':' in sloc[0]:
+                # this uses the hex function to convert the decimal integer into
+                # a string in base 16, then it removes the preceeding 0x
+                table.append((sloc[0][:-1], hex(pc)[2:]))
+            continue
+
+        # handle the line starting with a symbol
+        if ':' in sloc[0]:
+            # this uses the hex function to convert the decimal integer into
+            # a string in base 16, then it removes the preceeding 0x
+            table.append((sloc[0][:-1], hex(pc)[2:]))
+
+        # every instruction in SIC/XE is 3 bytes
+        pc += 3
+
+    # order the table
+    table.sort()
+
+    return table
+
+def main():
+    if len(sys.argv) < 2:
+          print "Source file not provided"
+          exit(1)
+
+    fname = sys.argv[1]
+    ifile = open(fname, "r") # this is the input file of the program
+
+    prog_list = [] # this will contain the lines of the program as a list
+
+    line = ifile.readline() # read a single line from the file
+
+    # read the whole file in
+    while len(line) > 0:
+        line = line[:-2] # remove the newline character at the end of the line
+
+        # in SIC/XE, all comments start at character 41, so we ignore those
+        if len(line) > 40:
+            line = line[:40]
+
+        # remove the spaces from the line and convert the line to a list
+        line_list = line.split(' ')
+        while '' in line_list:
+            line_list.remove('')
+
+        prog_list.append(line_list)
+
+        line = ifile.readline() # read a single line from the file
+
+    # this is a cleaner way of printing the program list
+    for sloc in prog_list:
+        print(sloc)
+
+    # provide a break between the output lines
+    print('')
+    print('')
+
+    printTable(pass1(prog_list))
+
+if __name__ == "__main__":
+  main()

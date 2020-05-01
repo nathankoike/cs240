@@ -1,0 +1,5 @@
+SIC/XE Assembler Version 1.6
+  Assembling:  t2.asm
+SIC/XE Assembler Version 1.6
+Symbols:
+  COMMENT: 000000

@@ -1,0 +1,1232 @@
+#!/usr/bin/python
+"""
+Name: Nate Koike
+Proj: Final Project
+Desc: Make an assembler for the SIC/XE programming langauge
+      extended -> SIC -> based -> direct -> pc-relative
+"""
+import sys
+
+# this is a list of all the instructions in the SIC/XE instruction set
+format1 = ["fix", "float", "hio", "norm", "sio", "tio"]
+
+format2 = ["addr", "clear", "compr", "divr", "mulr", "rmo", "shiftl", "shiftr",
+           "subr", "svc", "tixr"]
+
+format3 = ["add", "addf", "and", "comp", "compf", "div", "divf", "j", "jeq",
+           "jgt", "jlt", "jsub", "lda", "ldb", "ldch", "ldf", "ldl", "lds",
+           "ldt", "ldx", "lps", "mul", "mulf", "or", "rd", "rsub", "ssk", "sta",
+           "stb", "stch", "stf", "sti", "stl", "sts", "stsw", "stt", "stx",
+           "sub", "subf", "td", "tix", "wd"]
+
+format4 = ["+add", "+addf", "+and", "+comp", "+compf", "+div", "+divf", "+j",
+           "+jeq", "+jgt", "+jlt", "+jsub", "+lda", "+ldb", "+ldch", "+ldf",
+           "+ldl", "+lds", "+ldt", "+ldx", "+lps", "+mul", "+mulf", "+or",
+           "+rd", "+rsub", "+ssk", "+sta", "+stb", "+stch", "+stf", "+sti",
+           "+stl", "+sts", "+stsw", "+stt", "+stx", "+sub", "+subf", "+td",
+           "+tix", "+wd"]
+
+# this is a set of all possible instructions organized by format number
+instruction_set = [format1, format2, format3, format4]
+
+# this is a dictionary where every mnemonic maps to its respective opcode
+mnemonic_map = {
+   "add" : "18",
+  "addf" : "58",
+  "addr" : "90",
+   "and" : "40",
+ "clear" : "b4",
+  "comp" : "28",
+ "compf" : "88",
+ "compr" : "a0",
+   "div" : "24",
+  "divf" : "64",
+  "divr" : "9c",
+   "fix" : "c4",
+ "float" : "c0",
+   "hio" : "f4",
+     "j" : "3c",
+   "jeq" : "30",
+   "jgt" : "34",
+   "jlt" : "38",
+  "jsub" : "48",
+   "lda" : "00",
+   "ldb" : "68",
+  "ldch" : "50",
+   "ldf" : "70",
+   "ldl" : "08",
+   "lds" : "6c",
+   "ldt" : "74",
+   "ldx" : "04",
+   "lps" : "d0",
+   "mul" : "20",
+  "mulf" : "60",
+  "mulr" : "98",
+  "norm" : "c8",
+    "or" : "44",
+    "rd" : "d8",
+   "rmo" : "ac",
+  "rsub" : "4c",
+"shiftl" : "a4",
+"shiftr" : "a8",
+   "sio" : "f0",
+   "ssk" : "ec",
+   "sta" : "0c",
+   "stb" : "78",
+  "stch" : "54",
+   "stf" : "80",
+   "sti" : "d4",
+   "stl" : "14",
+   "sts" : "7c",
+  "stsw" : "e8",
+   "stt" : "84",
+   "stx" : "10",
+   "sub" : "1c",
+  "subf" : "5c",
+  "subr" : "94",
+   "svc" : "b0",
+    "td" : "e0",
+   "tio" : "f8",
+   "tix" : "2c",
+  "tixr" : "b8",
+    "wd" : "dc"
+}
+
+def printTable(table, symbols):
+    ''' nicely print the symbol table associated with the program '''
+    print("Symbols:")
+    for symbol in symbols:
+        print " ",
+        print symbol.upper() + ':',
+        print table[symbol]
+
+def printLine(line):
+    ''' print a line of code nicely '''
+    for term in line:
+        print term,
+
+def tab_to_space(line):
+    ''' convert a tab to the correct number of spaces '''
+    c_count = 0
+    # this is the line with tabs replaced with an appropriate amount of spaces
+    new_line = ""
+    for c in line:
+        if not c == '\t':
+            c_count += 1 # increase the count for the number of characters seen
+            new_line += c # add the character to the new string
+        else:
+            # each tab can take at most 8 spaces but might not always do that
+            space_count = (8 - (c_count % 8))
+
+            new_line += (' ' * space_count) # add in as many spaces as necessary
+            c_count += space_count # increase the character count as needed
+
+    return new_line
+
+def check_format(opcode):
+    ''' check which addressing mode we need to use; return 0 if the opcode is
+        invalid '''
+    global instruction_set
+
+    for i in range(len(instruction_set)):
+        if opcode in instruction_set[i]:
+            return (i + 1)
+
+    return 0
+
+def start(sloc, pc, started, line_count):
+    ''' get the offset of the start or return an error '''
+    # start must always be in the first sloc
+    if pc > 0:
+        print(str("ERROR ON LINE " + str(line_count) + ':'))
+        printLine(sloc) # print the line properly
+        print('') # add the newline at the end
+        print("start encountered after first line")
+        exit(1) # exit with an error
+
+    # we cannot redefine start
+    if started:
+        print("ERROR ON LINE", str(line_count) + ':')
+        printLine(sloc)
+        print('')
+        print("start has already been defined")
+        exit(1) # exit with an error
+
+    # check to make sure the last argument is valid
+            # allow for start to have no arguments
+    new_pc = sloc[-1]
+    if new_pc.lower() == 'start':
+        new_pc = '0' # without an extra argument, the argument is 0
+
+    # make sure we have a hex value
+    try:
+        pc = int(new_pc, 16)
+        pc = 0
+    except:
+        print("ERROR ON LINE " + str(line_count) + ':')
+        printLine(sloc)
+        print('')
+        print(str(new_pc) + " is not a valid hex number")
+        exit(1) # exit with an error
+
+    # the largest number we can accomodate here is a 4-digit hex value
+    if len((str(new_pc))) > 5:
+        print("ERROR ON LINE " + str(line_count) + ':')
+        printLine(sloc)
+        print('')
+        print("hex value is too large")
+        exit(1) # exit with an error
+
+    return int(new_pc, 16)
+
+def lineInc(sloc, line_count):
+    ''' find the offset increase of the current line '''
+    # make the opcode mnemonic the first thing in the list
+    if ':' in sloc[0]:
+        sloc = sloc[1:]
+
+    opcode = sloc[0]
+    first = 0
+    last = 3
+
+    # reserve x-many words
+    if opcode.lower() == 'resw':
+        try:
+            val = 3 * int(sloc[1])
+            return val
+        except:
+            print(str("ERROR ON LINE " + str(line_count) + ':'))
+            printLine(sloc) # print the line properly
+            print('')
+            print("invalid instruction operand")
+            exit(1) # exit with an error
+
+    # reserve x-many bytes
+    if opcode.lower() == 'resb':
+        try:
+            val = int(sloc[1])
+            return val
+        except:
+            print(str("ERROR ON LINE " + str(line_count) + ':'))
+            printLine(sloc) # print the line properly
+            print('')
+            print("invalid instruction operand")
+            exit(1) # exit with an error
+
+    if opcode.lower() == 'byte':
+        try:
+            operand = sloc[1]
+        except:
+            print(str("ERROR ON LINE " + str(line_count) + ':'))
+            printLine(sloc) # print the line properly
+            print('')
+            print("invalid instruction operand")
+            exit(1) # exit with an error
+
+        if "'" in operand:
+            quote = 0 # keep track of the number of quotes in the line
+            for c in operand:
+                if c == "'":
+                    quote += 1
+            if not quote == 2:
+                print(str("ERROR ON LINE " + str(line_count) + ':'))
+                printLine(sloc) # print the line properly
+                print('')
+                print("invalid instruction operand")
+                exit(1) # exit with an error
+            first = operand.index("'")
+
+            if "x'" in operand or "X'" in operand:
+                # reverse the string and find the index of the second '
+                last = len(operand[operand.index("'"):len(operand)])
+                return round((last - 1) / 2)
+
+            else: # this handles c' and C'
+                last = len(operand[operand.index("'"):len(operand) - 1])
+                return last - 1
+
+        # if the operand does not contain a '
+        else:
+            return 1
+
+    if opcode.lower() == 'word':
+        try:
+            operand = int(sloc[1])
+            hex(operand)
+            return 3
+        except:
+            print(str("ERROR ON LINE " + str(line_count) + ':'))
+            printLine(sloc) # print the line properly
+            print('')
+            print("invalid instruction operand")
+            exit(1) # exit with an error
+
+    error = False
+    try:
+        if '#' in sloc[1]:
+            if ",x" in sloc[1].lower() or 'x' == sloc[-1].lower():
+                error = True
+    except:
+        0 == 0
+
+    if error:
+        print(str("ERROR ON LINE " + str(line_count) + ':'))
+        printLine(sloc) # print the line properly
+        print('')
+        print("invalid instruction operand")
+        exit(1)
+
+    # handle directives
+    return check_format(opcode)
+
+def pass1(prog):
+    global instruction_set
+    ''' generate a symbol table for the program given the program as a list '''
+    # print("Pass 1:")
+
+    started = False # this marks whether or not start is already defined
+    line_count = 0 # this is the current line of the program
+    pc = 0 # this is the program counter and will need to be in hex
+
+    table = {} # this will hold all of the symbols in the program
+    symbols = [] # this will be used to access the symbols in the table
+
+    # read all the lines in the file and look for symbols or errors
+    # retun with an error if there is an error, adding all symbols along the way
+    for sloc in prog:
+        line_count += 1
+
+        # this checks to see if the line was entirely whitespace
+        if sloc == []:
+            continue
+
+        # account for a comment spanning an entire line
+        if sloc[0][0] == '.':
+            continue
+
+        # start is a directive and has no bearing on the pc other than to change
+        # its base value, so we need to handle it separately
+        if "start" in sloc:
+            pc = start(sloc, pc, started, line_count)
+
+            started = True
+
+            # handle the line starting with a symbol
+            if ':' in sloc[0]:
+                # this uses the hex function to convert the decimal integer into
+                # a string in base 16, then it removes the preceeding 0x
+                filled = hex(pc)[2:]
+
+                # fill in the value until it is 6 digits long
+                while len(filled) < 6:
+                    filled = "0" + filled
+
+                table[(sloc[0][:sloc[0].index(':')])] = filled.upper()
+
+                if (sloc[0][:sloc[0].index(':')]) in symbols:
+                    print(str("ERROR ON LINE " + str(line_count) + ':'))
+                    printLine(sloc) # print the line properly
+                    print('') # add the newline at the end
+                    print("symbol already defined")
+                    exit(1) # exit with an error
+
+                symbols.append((sloc[0][:sloc[0].index(':')]))
+            continue
+
+        # handle the line starting with a symbol
+        elif ':' in sloc[0]:
+            # this uses the hex function to convert the decimal integer into
+            # a string in base 16, then it removes the preceeding 0x
+            filled = hex(int(pc))[2:]
+
+            # fill in the value until it is 6 digits long
+            while len(filled) < 6:
+                filled = "0" + filled
+
+            table[(sloc[0][:sloc[0].index(':')])] = filled.upper()
+
+            if (sloc[0][:sloc[0].index(':')]) in symbols:
+                print(str("ERROR ON LINE " + str(line_count) + ':'))
+                printLine(sloc) # print the line properly
+                print('') # add the newline at the end
+                print("symbol already defined")
+                exit(1) # exit with an error
+
+            symbols.append((sloc[0][:sloc[0].index(':')]))
+
+        # increment the PC properly
+        pc += lineInc(sloc, line_count)
+
+    # order the symbols
+    symbols.sort()
+
+    return (table, symbols)
+
+# return (true, machine code) if the instruction successfully assembled and
+# false otherwise
+def extended(line, table):
+    global mnemonic_map
+    global instruction_set
+
+    try:
+        # look up the opcode from the table
+        if not line[0] in instruction_set[3]:
+            return (False, '')
+
+        opcode = mnemonic_map[line[0][1:]]
+    except:
+        return (False, '')
+
+    # change the opcode to get the numeric representation of the opcode
+    opcode = int(opcode, 16)
+
+    # get the address
+    address = line[-1]
+
+    # check to see if indexed mode was used
+    if address.lower() == 'x':
+        address = line[-2]
+
+    # check for indirect addressing mode
+    if '@' in address:
+        opcode += 2
+        address = address[1:]
+
+    # check for immediate addressing mode
+    elif '#' in address:
+        opcode += 1
+        address = address[1:]
+
+    # set the addressing mode to be SIC/XE extended
+    else:
+        opcode += 3
+
+    # check to see if the address is a symbol
+    try:
+        address = int(table[address], 16)
+    except:
+        address = int(address)
+
+    # convert the address into hex and extend it
+    address = hex(address)[2:]
+
+    # print(address)
+
+    if len(address) > 5:
+        print str("ERROR ON: ")
+        printLine(line) # print the line properly
+        print('')
+        print("address too long")
+        exit(1)
+
+    while len(address) < 5:
+        address = '0' + address
+
+    # set the proper bits for the high nybble of the address
+    high = 1
+
+    if 'x' in line:
+        high += 8
+    high = hex(high)[2:]
+
+    address = high + address
+
+    opcode = hex(opcode)[2:]
+    if len(opcode) < 2:
+        opcode = '0' + opcode
+
+    # add the results to the machine code
+    machine_code = opcode + address
+
+    return (True, machine_code)
+
+# return (true, machine code) if the instruction successfully assembled and
+# false otherwise
+def sic(line, table):
+    global mnemonic_map
+    global instruction_set
+
+    try:
+        # look up the opcode from the table
+        if not line[0] in instruction_set[2]:
+            return (False, '')
+
+        opcode = mnemonic_map[line[0]]
+    except:
+        return (False, '')
+
+    # change the opcode to get the numeric representation of the opcode
+    opcode = int(opcode, 16)
+
+    # get the address
+    address = line[-1]
+
+    # check to see if indexed mode was used
+    if address.lower() == 'x':
+        address = line[-2]
+
+    # check for indirect addressing mode
+    if '@' in address:
+        return (False, '')
+
+    # check for immediate addressing mode
+    if '#' in address:
+        return (False, '')
+
+    if line[0].lower() == 'rsub':
+        if len(line) > 1:
+            exit(1)
+        address = "0000"
+
+    # check to see if the address is a symbol
+    try:
+        address = int(table[address], 16)
+    except:
+        address = int(address)
+
+    # convert the address into hex and extend it
+    address = hex(address)[2:]
+    if int(address, 16) > 32767:
+        return (False, '')
+
+    while len(address) < 4:
+        address = '0' + address
+
+    if 'x' in line:
+        address = hex((int(address, 16) + 32768))[2:]
+
+    opcode = hex(opcode)[2:]
+    if len(opcode) < 2:
+        opcode = '0' + opcode
+
+    # add the results to the machine code
+    machine_code = opcode + address
+
+
+    return (True, machine_code)
+
+# return (true, machine code) if the instruction successfully assembled and
+# false otherwise
+def based(line, table, base):
+    global mnemonic_map
+    global instruction_set
+
+    try:
+        # look up the opcode from the table
+        if not line[0] in instruction_set[2]:
+            return (False, '')
+
+        opcode = mnemonic_map[line[0]]
+    except:
+        return (False, '')
+
+    # change the opcode to get the numeric representation of the opcode
+    opcode = int(opcode, 16)
+
+    # get the address
+    address = line[-1]
+
+    # check to see if indexed mode was used
+    if address.lower() == 'x':
+        address = line[-2]
+
+    # check for indirect addressing mode
+    if '@' in address:
+        opcode += 2
+        address = address[1:]
+
+    # check for immediate addressing mode
+    elif '#' in address:
+        opcode += 1
+        address = address[1:]
+
+    # set the addressing mode to be SIC/XE extended
+    else:
+        opcode += 3
+
+    # check to see if the address is a symbol
+    try:
+        address = int(table[address], 16) - base
+    except:
+        address = int(address) - base
+
+    # if the address is negative we cannot use based
+    if address < 0:
+        return (False, '')
+
+    # convert the address into hex and extend it
+    address = hex(address)[2:]
+    if int(address, 16) > 4095:
+        return (False, '')
+
+    while len(address) < 4:
+        address = '0' + address
+
+    if 'x' in line:
+        address = hex((int(address, 16) + 32768))[2:]
+
+    address = hex(int(address, 16) + 16384) [2:]
+
+    opcode = hex(opcode)[2:]
+    if len(opcode) < 2:
+        opcode = '0' + opcode
+
+    # add the results to the machine code
+    machine_code = opcode + address
+
+    return (True, machine_code)
+
+# handle format 1 and 2
+def f12(line):
+    global mnemonic_map
+    global instruction_set
+
+    # check for a format 1 instruction
+    if line[0].lower() in instruction_set[0]:
+        if len(line) > 1:
+            exit(1)
+        return (True, mnemonic_map[line[0].lower()])
+
+    # format 2 instruction time wee
+    machine_code = mnemonic_map[line[0].lower()]
+
+    regs = ['a', 'x', 'l', 'b', 's', 't', 'f', '', 'pc', 'sw']
+
+    r1 = 0
+    r2 = 0
+
+    # addr
+    if machine_code == "90":
+        try:
+            r1 = regs.index(line[1].lower()[0])
+            r2 = regs.index(line[2].lower()[0])
+        except:
+            exit(1)
+
+    # clear
+    elif machine_code == "b4":
+        try:
+            r1 = regs.index(line[1].lower())
+            r2 = 0
+        except:
+            exit(1)
+
+    # compr
+    elif machine_code == "a0":
+        try:
+            r1 = regs.index(line[1].lower())
+            r2 = regs.index(line[2].lower())
+        except:
+            exit(1)
+
+    # divr
+    elif machine_code == "9c":
+        try:
+            r1 = regs.index(line[1].lower())
+            r2 = regs.index(line[2].lower())
+        except:
+            exit(1)
+
+    # mulr
+    elif machine_code == "98":
+        try:
+            r1 = regs.index(line[1].lower())
+            r2 = regs.index(line[2].lower())
+        except:
+            exit(1)
+
+    # rmo
+    elif machine_code == "ac":
+        try:
+            r1 = regs.index(line[1].lower())
+            r2 = regs.index(line[2].lower())
+        except:
+            exit(1)
+
+    # shiftl
+    elif machine_code == "a4":
+        try:
+            r1 = regs.index(line[1].lower())
+            r2 = int(line[2])
+        except:
+            exit(1)
+
+    # shiftr
+    elif machine_code == "98":
+        try:
+            r1 = regs.index(line[1].lower())
+            r2 = int(line[2])
+        except:
+            exit(1)
+
+    # subr
+    elif machine_code == "94":
+        try:
+            r1 = regs.index(line[1].lower())
+            r2 = regs.index(line[2].lower())
+        except:
+            exit(1)
+
+    # svc
+    elif machine_code == "b0":
+        try:
+            r1 = int(line[1])
+            r2 = 0
+        except:
+            exit(1)
+
+    # tixr
+    elif machine_code == "b8":
+        try:
+            r1 = regs.index(line[1].lower())
+            r2 = 0
+        except:
+            exit(1)
+
+    else:
+        exit(1)
+
+    r1 = hex(r1)[2]
+    r2 = hex(r2)[2]
+
+
+    machine_code += r1
+    machine_code += r2
+
+    return (True, machine_code)
+
+# return (true, machine code) if the instruction successfully assembled and
+# false otherwise
+def direct(line, table):
+    global mnemonic_map
+    global instruction_set
+
+    try:
+        # look up the opcode from the table
+        if not line[0] in instruction_set[2]:
+            return f12(line)
+
+        opcode = mnemonic_map[line[0]]
+    except:
+        return (False, '')
+
+    # change the opcode to get the numeric representation of the opcode
+    opcode = int(opcode, 16)
+
+    # get the address
+    address = line[-1]
+
+    # check to see if indexed mode was used
+    if address.lower() == 'x':
+        address = line[-2]
+
+    # check for indirect addressing mode
+    if '@' in address:
+        opcode += 2
+        address = address[1:]
+
+    # check for immediate addressing mode
+    elif '#' in address:
+        opcode += 1
+        address = address[1:]
+
+    # set the addressing mode to be SIC/XE extended
+    else:
+        opcode += 3
+
+    # check to see if the address is a symbol
+    try:
+        address = int(table[address], 16)
+    except:
+        address = int(address)
+
+    # convert the address into hex and extend it
+    address = hex(address)[2:]
+    if int(address, 16) > 4095:
+        return (False, '')
+
+    while len(address) < 4:
+        address = '0' + address
+
+    if 'x' in line:
+        address = hex((int(address, 16) + 32768))[2:]
+
+    opcode = hex(opcode)[2:]
+    if len(opcode) < 2:
+        opcode = '0' + opcode
+
+    # add the results to the machine code
+    machine_code = opcode + address
+
+    return (True, machine_code)
+
+# return a hex number representing the 2's complement of a number
+def twoBar(num):
+    binary = bin(int(num, 16))[2:] # convert the hex number to a binary number
+
+    # force the biary number to have the correct number of bits
+    while len(binary) < 12:
+        binary = '0' + binary
+
+    newNum = ""
+
+    for digit in binary:
+        if digit == '1':
+            newNum += '0'
+        else:
+            newNum += '1'
+
+    # convert the number back to an int and add one
+    newNum = int(newNum, 2) + 1
+
+    return hex(newNum)[2:]
+
+# return (true, machine code) if the instruction successfully assembled and
+# false otherwise
+def PCR(line, table, pc):
+    global mnemonic_map
+    global instruction_set
+
+    try:
+        # look up the opcode from the table
+        if not line[0] in instruction_set[2]:
+            return (False, '')
+
+        opcode = mnemonic_map[line[0]]
+    except:
+        return (False, '')
+
+    # change the opcode to get the numeric representation of the opcode
+    opcode = int(opcode, 16)
+
+    # get the address
+    address = line[-1]
+
+    # check to see if indexed mode was used
+    if address.lower() == 'x':
+        address = line[-2]
+
+    # check for indirect addressing mode
+    if '@' in address:
+        opcode += 2
+        address = address[1:]
+
+    # check for immediate addressing mode
+    elif '#' in address:
+        opcode += 1
+        address = address[1:]
+
+    # set the addressing mode to be SIC/XE extended
+    else:
+        opcode += 3
+
+    # check to see if the address is a symbol
+    try:
+        address = int(table[address], 16)
+    except:
+        address = int(address)
+
+    # convert the address into hex factor in the pc and extend it
+    address = hex(int(address) - pc)[2:]
+
+    # check to see if we need to go negative
+    if int(address, 16) < 0:
+        address = address[3:]
+        address = twoBar(address)
+
+    while len(address) < 3:
+        address = '0' + address
+
+    if 'x' in line:
+        address = hex((int(address, 16) + 32768))[2:]
+
+    address = hex(int(address, 16) + 8192)[2:]
+
+    opcode = hex(opcode)[2:]
+    if len(opcode) < 2:
+        opcode = '0' + opcode
+
+    # add the results to the machine code
+    machine_code = opcode + address
+
+    return (True, machine_code)
+
+def pass2(prog, symbols, table):
+    ''' generate the machine code for the given program source code
+        prog is a list of all the lines in the source code
+        symbols is a list of all the symbols in the source code
+        table is the symbol table generated by pass 1 '''
+    machine_code = ""
+    pc = 0
+    line_count = 0
+    base = [False, 0]
+
+    entry = 0
+
+    # clean the source code so there are no symbols defined in the program list
+    for i in range(len(prog)):
+        if ':' in prog[i][0]:
+            # we need to make sure we don't remove an opcode mnemonic
+            first = prog[i][0].split(':') # this will be the opcode
+
+            # remove all spaces
+            while ' ' in first:
+                first.remove(' ')
+
+            # check to see how long the first term is
+            # if the first term has multiple arguments, just take the second one
+            # append the rest of the program list to this opcode
+            if len(first) > 1:
+                prog[i] = [first[1]] + prog[i][1:]
+            # otherwise this was just a symbol so we can remove just that
+            else:
+                prog[i] = prog[i][1:]
+
+    # remove all the empty strings
+    for line in prog:
+        while '' in line:
+            line.remove('')
+
+    # now that we have cleaned our input, we can actually assemble our code
+    for line in prog:
+        # get the start again if there is a start directive
+        if line[0] == 'start':
+            # we really only need the first 2 arguments, but the rest are there
+            # because of the way I wrote the function
+            entry = start(line, entry, False, 0)
+            pc = entry
+
+        if line[0][0] == '.':
+            continue
+
+        # if we see the base directive, allow ourselves to use based addressing
+        # with the base provided in the line
+        if line[0].lower() == 'base':
+            base = [True, int(line[1])]
+            continue
+
+        # if we see the nobase directive, turn off based addressing as an option
+        if line[0].lower() == 'nobase':
+            base[0] = False
+            continue
+
+        # increment pc properly
+        pc += lineInc(line, 0)
+
+        # rsub takes no args
+        if line[0].lower() == 'rsub':
+            if len(line) > 1:
+                exit(1)
+
+        # EXTENDED
+        assembled = extended(line, table)
+        if assembled[0]:
+            machine_code += assembled[1]
+            continue
+
+        # SIC
+        assembled = sic(line, table)
+        if assembled[0]:
+            machine_code += assembled[1]
+            continue
+
+        # BASED
+        if base[0]:
+            assembled = based(line, table, base[1])
+        if assembled[0]:
+            machine_code += assembled[1]
+            continue
+
+        # DIRECT
+        assembled = direct(line, table)
+        if assembled[0]:
+            machine_code += assembled[1]
+            continue
+
+        # PC-RELATIVE
+        assembled = PCR(line, table, pc)
+        if assembled[0]:
+            machine_code += assembled[1]
+            continue
+
+    # return the string that has all the machine code
+    return machine_code
+
+# convert a string in hex machine code to its ascii representation
+def mc2ascii(machine_code):
+    ascii = ""
+
+    if len(machine_code) == 1:
+        return chr(int(machine_code, 16))
+
+    for i in range(len(machine_code) // 2):
+        ascii += chr(int(machine_code[(i * 2):(i * 2) + 2], 16))
+
+    return ascii
+
+# output the file properly
+def output(prog, symbols, table, machine_code, ofile):
+    #########################
+    # HEADER
+    #########################
+
+    header = "H"
+
+    name = ""
+    address = "ffffffffffffff" # this is just a really big number in hex
+    for line in prog:
+        if ':' in line[0]:
+            name = line[0][:line[0].index(':')]
+            address = table[name]
+            break
+
+    # force the name to be at least 6 characters long
+    if len(name) < 6:
+        name += (' ' * 6)
+
+    # add the name to the header record
+    header += name[:6]
+
+    # get the start index
+    sindex = 0
+    for i in range(len(prog)):
+        if "start" in prog[i]:
+            sindex = i
+
+    # add the start address to the header record
+    s = start(prog[sindex], 0, False, 0)
+    s = hex(s)[2:]
+
+    while len(s) < 6:
+        s = '0' + s
+
+    lens = s # all important hex numbers
+
+    # find all the reserves and add them to the length
+    length = 0
+    for line in prog:
+        length += lineInc(line, 0)
+
+    length = hex(length)[2:]
+
+    while len(length) < 6:
+        length = '0' + length
+
+    lens += length
+
+    header += mc2ascii(lens)
+
+    # output the header record
+    ofile.write(header)
+
+    #########################
+    # TEXT
+    #########################
+
+    # setup for this and for the end
+    eaddr = '0'
+
+    for line in prog:
+        if line[0].lower() == 'end':
+            try:
+                eaddr = hex(line[-1])[2:]
+            except:
+                0 == 0
+
+    while len(eaddr) < 6:
+        eaddr = '0' + eaddr
+
+    pc = int(eaddr, 16)
+    line_num = 0
+    remainder = "" # hold the remainder of the line after it has been output
+    last = ''
+
+    length = 0
+    lastlen = 0
+
+    while line_num < len(prog):
+        record = "T"
+        # length = length - 64
+
+        if 'start' in prog[line_num]:
+            pc = start(prog[line_num], 0, False, 0)
+
+        # attach the pc to the record
+        pc = hex(pc)[2:]
+        while len(pc) < 6:
+            pc = '0' + pc
+        record += mc2ascii(pc)
+
+        pc = int(pc, 16)
+
+        mc = ""
+
+        # attach the remainder from the last record
+        mc += remainder
+
+        length = len(remainder)
+
+        remainder = ""
+
+        while length < 64:
+            if 'start' in prog[line_num]:
+                pc = start(prog[line_num], 0, False, 0)
+
+            if 'resw' in prog[line_num] or 'resb' in prog[line_num]:
+                pc += lineInc(prog[line_num], line_num)
+                line_num += 1
+                break
+
+            pc += lineInc(prog[line_num], line_num)
+
+            # convert the machine code into ascii and add it to the
+            mc += mc2ascii(machine_code[:(2 * lineInc(prog[line_num], 0))])
+
+            length += lineInc(prog[line_num], line_num)
+
+            machine_code = machine_code[(2 * lineInc(prog[line_num], 0)):]
+
+            line_num += 1
+
+            if line_num >= len(prog):
+                break
+
+        if length > 64:
+            remainder = mc[64:]
+            mc = mc[:64]
+            length = 64
+
+        hlen = hex(length)[2:]
+
+        if len(hlen) < 2:
+            hlen = '0' + hlen
+
+
+        lastlen = hex(lastlen)[2:]
+        while len(lastlen) < 6:
+            lastlen = '0' + lastlen
+        record = "T" + mc2ascii(lastlen)
+
+        record += mc2ascii(hlen)
+        last += mc2ascii(hex(pc)[2:])
+
+        lastlen = int(hlen, 16)
+
+        record += mc
+
+        if not mc == "":
+            ofile.write(record)
+
+    #########################
+    # END
+    #########################
+    ending = "E"
+
+    ending += mc2ascii(eaddr)
+
+    ofile.write(ending)
+
+def main():
+    if len(sys.argv) < 2:
+        print "Source file not provided"
+        exit(1)
+
+    fname = sys.argv[1]
+    ifile = open(fname, "r") # this is the input file of the program
+
+    ofile = open(sys.argv[2], "w+")
+
+    prog_list = [] # this will contain the lines of the program as a list
+
+    line = ifile.readline() # read a single line from the file
+
+    # read the whole file in
+    while len(line) > 0:
+        line = line[:-1] # remove the newline character at the end of the line
+
+        line = tab_to_space(line)
+
+        # in SIC/XE, all comments start at character 41, so we ignore those
+        if len(line) > 40:
+            line = line[:40]
+
+        # clear out any spaces between quotes
+        new_line = ""
+        in_quotes = False
+        for c in line:
+            # toggle whether or not we are in quotes
+            if c == "'":
+                in_quotes = not in_quotes
+
+            # replace a space with a null character
+            if in_quotes:
+                if c == ' ':
+                    new_line += chr(0)
+                else:
+                    new_line += c
+            else:
+                new_line += c
+        line = new_line
+
+        line_list = line.split()
+        while '' in line_list:
+            line_list.remove('')
+
+        prog_list.append(line_list)
+
+        line = ifile.readline() # read a single line from the file
+
+    symbol_map = pass1(prog_list)
+
+    # printTable(symbol_map[0], symbol_map[1])
+    # print('')
+
+    # we need to clean up the input by getting rid of anything that isn't used
+    # in the code
+    removal = []
+    for i in range(len(prog_list)):
+        if prog_list[i] == []:
+            removal.append(i)
+            continue
+        if prog_list[i][0] == '.':
+            removal.append(i)
+
+    removal.sort()
+    removal.reverse()
+
+    for index in removal:
+        prog_list.pop(index)
+
+    # we replaced spaces with null characters earlier, so we need to replace the
+    # null charaacters for spaces
+    # remove null characters from strings
+    for i in range(len(prog_list)):
+        new_line = []
+        for j in range(len(prog_list[i])):
+            new_term = ""
+            for c in prog_list[i][j]:
+                if ord(c) == 0:
+                    # replace a space with a null character
+                    new_term += ' '
+                else:
+                    new_term += c
+            new_line.append(new_term)
+        prog_list[i] = new_line
+
+    # remove commas
+    for line in prog_list:
+        for i in range(len(line)):
+            if ',' in line[i]:
+                line[i] = line[i][:-1]
+
+    # # provide a break between the output lines
+    # print('')
+
+    output(prog_list,\
+           symbol_map[1],\
+           symbol_map[0],\
+           pass2(prog_list, symbol_map[1], symbol_map[0]),\
+           ofile)
+
+if __name__ == "__main__":
+  main()

@@ -1,0 +1,168 @@
+Microsoft (R) Macro Assembler Version 6.11		    02/05/19 16:30:00
+sqrt							     Page 1 - 1
+
+
+				TITLE sqrt
+
+				; sqrt.asm
+				; Nate Koike
+				; Spring 2019
+
+				; finds the square root of a 16-bit unsigned integer
+
+				INCLUDE CS240.inc
+			      C .NOLIST
+			      C .LIST
+			      C 
+				.8086
+
+ = 4C00				CALLDOS=4C00h
+ = 0021				DOS=21h
+
+ 0000				.data
+ 0000 0001			odd          WORD   1
+ 0002 45 6E 74 65 72 20		userPrompt   Byte   "Enter a number: ", 0
+       61 20 6E 75 6D 62
+       65 72 3A 20 00
+
+ 0000				.code
+ 0000				sqrt PROC
+				     ; preserve the state of the machine
+ 0000  50			     push AX
+ 0001  8B C2			     mov  AX, DX
+ 0003  FF 36 0000 R		     push odd
+ 0007  9C			     pushf
+
+				     ; check for the zero cases
+ 0008  83 F8 02			     cmp AX, 2
+ 000B  72 2B			     jb  zero
+
+ 000D  BA 0000			     mov DX, 0 ; reset the value of DX so we can iterate cleanly
+
+ 0010				start:
+				     ; see if we can increment through the process again
+ 0010  3B 06 0000 R		     cmp AX, odd
+ 0014  72 0E			     jb  round
+
+				     ; this process progressively adds odd numbers in a process in which
+				     ; the number of additions is equal to the square root of the sum of
+				     ; the odd numbers added in the sequence
+ 0016  2B 06 0000 R		     sub AX, odd
+ 001A  83 06 0000 R 02		     add odd, 2
+ 001F  83 C2 01			     add DX, 1
+ 0022  EB EC			     jmp start
+
+				; check to see if we need to round up or round down
+ 0024				round:
+ 0024  83 C2 01			     add DX, 1
+ 0027  3B C2			     cmp AX, DX
+ 0029  72 03			     jb  done
+ 002B  83 C2 01			     add DX, 1
+
+ 002E				done:
+				     ; restore the state of the machine
+ 002E  83 EA 01			     sub DX, 1
+ 0031  9D			     popf
+ 0032  8F 06 0000 R		     pop odd
+ 0036  58			     pop AX
+
+ 0037  C3			     ret
+
+ 0038				zero:
+ 0038  83 C2 01			     add DX, 1
+ 003B  EB F1			     jmp done
+
+ 003D				sqrt ENDP
+
+ 003D				main PROC
+				     ; move variables into data segment
+ 003D  B8 ---- R		     mov AX, @data
+ 0040  8E D8			     mov DS, AX
+
+				     ; prompt the user to enter a number
+ 0042  BA 0002 R		     mov DX, OFFSET userPrompt
+ 0045  E8 0000 E		     call WriteString	
+
+				     ; read in an integer and move it into AX
+ 0048  E8 0000 E		     call ReadUInt
+
+ 004B  E8 FFB2			     call sqrt
+ 004E  E8 0000 E		     call WriteInt
+ 0051  E8 0000 E		     call NewLine
+
+ 0054  B8 4C00			     mov AX, CALLDOS
+ 0057  CD 21			     int DOS
+ 0059				main ENDP
+				END main
+Microsoft (R) Macro Assembler Version 6.11		    02/05/19 16:30:00
+sqrt							     Symbols 2 - 1
+
+
+
+
+Segments and Groups:
+
+                N a m e                 Size     Length   Align   Combine Class
+
+DGROUP . . . . . . . . . . . . .	GROUP
+_DATA  . . . . . . . . . . . . .	16 Bit	 0013	  Word	  Public  'DATA'	
+STACK  . . . . . . . . . . . . .	16 Bit	 0200	  Para	  Stack	  'STACK'	 
+_TEXT  . . . . . . . . . . . . .	16 Bit	 0059	  Word	  Public  'CODE'	
+
+
+Procedures,  parameters and locals:
+
+                N a m e                 Type     Value    Attr
+
+DumpLongRegs . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+DumpMem  . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+DumpRegs . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+NewLine  . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+PrintVersion . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadChar . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadHexByte  . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadHexDigit . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadHexWord  . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadInt  . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadLine . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadUInt . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+SkipToEOL  . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+TraceRegisterChanges . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+Version  . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteBit . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteChar  . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteHexByte . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteHexDigit  . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteHexLong . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteHexWord . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteInt . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteString  . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteUInt  . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+main . . . . . . . . . . . . . .	P Near	 003D	  _TEXT	Length= 001C Public STDCALL
+sqrt . . . . . . . . . . . . . .	P Near	 0000	  _TEXT	Length= 003D Public STDCALL
+  start  . . . . . . . . . . . .	L Near	 0010	  _TEXT	
+  round  . . . . . . . . . . . .	L Near	 0024	  _TEXT	
+  done . . . . . . . . . . . . .	L Near	 002E	  _TEXT	
+  zero . . . . . . . . . . . . .	L Near	 0038	  _TEXT	
+
+
+Symbols:
+
+                N a m e                 Type     Value    Attr
+
+@CodeSize  . . . . . . . . . . .	Number	 0000h	 
+@DataSize  . . . . . . . . . . .	Number	 0000h	 
+@Interface . . . . . . . . . . .	Number	 0003h	 
+@Model . . . . . . . . . . . . .	Number	 0002h	 
+@code  . . . . . . . . . . . . .	Text   	 _TEXT
+@data  . . . . . . . . . . . . .	Text   	 DGROUP
+@fardata?  . . . . . . . . . . .	Text   	 FAR_BSS
+@fardata . . . . . . . . . . . .	Text   	 FAR_DATA
+@stack . . . . . . . . . . . . .	Text   	 DGROUP
+CALLDOS  . . . . . . . . . . . .	Number	 4C00h	 
+DOS  . . . . . . . . . . . . . .	Number	 0021h	 
+odd  . . . . . . . . . . . . . .	Word	 0000	  _DATA	
+userPrompt . . . . . . . . . . .	Byte	 0002	  _DATA	
+
+	   0 Warnings
+	   0 Errors

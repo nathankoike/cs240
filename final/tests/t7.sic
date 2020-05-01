@@ -1,0 +1,5 @@
+	. Weight: 5
+	start	0
+first:	lda	count
+count:	resw	20
+	end	first

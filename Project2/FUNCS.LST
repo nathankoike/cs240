@@ -1,0 +1,323 @@
+Microsoft (R) Macro Assembler Version 6.11		    02/10/19 20:34:15
+funcs							     Page 1 - 1
+
+
+
+				TITLE funcs
+
+				; funcs.asm
+				; Nate Koike
+				; Spring 2019
+
+				; This is a set of functions
+
+				INCLUDE CS240.inc
+			      C .NOLIST
+			      C .LIST
+			      C 
+				.8086
+
+ 0000				.data
+ 0000 55 68 2D 4F 68 5F		stringy	BYTE	"Uh-Oh_Spaghetti-O's.asm", 0
+       53 70 61 67 68 65
+       74 74 69 2D 4F 27
+       73 2E 61 73 6D 00
+
+ 0000				.code
+				; this function computes a(x^2) + bx + c
+ 0000				Polynomial PROC
+ 0000  1E				   push DS
+ 0001  9C				   pushf
+
+					   ; get a(x^2)
+					   ; DX gets consumed in multiplication, so preserve it
+ 0002  52				   push DX
+ 0003  F7 E2				   mul  DX
+ 0005  5A				   pop  DX
+
+ 0006  52				   push DX
+ 0007  F7 E2				   mul  DX
+ 0009  5A				   pop  DX
+
+					   ; save CX, the save AX in CX
+ 000A  51				   push CX
+ 000B  8B C8				   mov  CX, AX
+
+					   ; move BX into AX to find bx
+ 000D  8B C3				   mov AX, BX
+
+					   ; find bx
+ 000F  52				   push DX
+ 0010  F7 E2				   mul DX
+ 0012  5A				   pop DX
+
+					   ; add in a(x^2)
+ 0013  03 C1				   add  AX, CX
+
+					   ; restore CX
+ 0015  59				   pop  CX
+
+					   ; finally, add c
+ 0016  03 C1				   add  AX, CX
+
+ 0018  9D				   popf
+ 0019  1F				   pop  DS
+ 001A  C3				   ret
+ 001B				Polynomial ENDP
+
+				; find the factorial of a number in AX
+ 001B				Factorial PROC
+ 001B  51				  push CX
+ 001C  9C				  pushf
+
+					  ; check the zero case
+ 001D  83 F8 01				  cmp AX, 1
+ 0020  72 16				  jb  zero
+
+					  ; set the counter for factorial
+ 0022  8B C8				  mov  CX, AX
+
+					  ; set the base value. this is either the return value or
+					  ; will be multiplied to be the correct number
+ 0024  B8 0001				  mov  AX, 1
+
+ 0027				start:
+ 0027  52				  push DX
+ 0028  F7 E1				  mul  CX
+ 002A  5A				  pop  DX
+ 002B  72 10				  jc   overflow
+ 002D  E2 F8				  loop start
+
+ 002F				done:
+ 002F  9D				  popf
+ 0030  59				  pop  CX
+
+					  ; reset the overflow flag
+ 0031  50				  push AX
+ 0032  B0 01				  mov  AL, 1
+ 0034  04 01				  add  AL, 1
+ 0036  58				  pop  AX
+
+ 0037  C3				  ret
+
+ 0038				zero:
+ 0038  B8 0001				  mov  AX, 1
+ 003B  EB F2				  jmp  done
+
+ 003D				overflow:
+ 003D  59				  pop  CX
+ 003E  81 C9 0800			  OR   CX, 0800h
+
+ 0042  51				  push CX
+ 0043  9D				  popf
+
+ 0044  59				  pop  CX
+
+ 0045  C3				  ret
+
+ 0046				Factorial ENDP
+
+				; this function computes the nth Fibonacci number
+ 0046				Fibonacci PROC
+ 0046  53				  push BX
+ 0047  51				  push CX
+ 0048  52				  push DX
+ 0049  9C				  pushf
+
+					  ; check the zero case
+ 004A  83 F8 01				  cmp  AX, 1
+ 004D  72 10				  jb   done
+
+					  ; make a counter
+ 004F  8B C8				  mov  CX, AX
+
+					  ; set the 0th and 1st Fibonacci numbers
+ 0051  B8 0000				  mov  AX, 0
+ 0054  BA 0001				  mov  DX, 1
+
+ 0057				start:
+					  ; save the last value in BX
+ 0057  8B D8				  mov  BX, AX
+
+					  ; find the current value
+ 0059  03 C2				  add  AX, DX
+
+					  ; move the last value to DX
+ 005B  8B D3				  mov  DX, BX
+
+ 005D  E2 F8				  loop start
+
+ 005F				done:
+ 005F  9D				  popf
+ 0060  5A				  pop  DX
+ 0061  59				  pop  CX
+ 0062  5B				  pop  BX
+ 0063  C3				  ret
+
+ 0064				Fibonacci ENDP
+
+				; this is a helper function that writes a single char
+				; to the screen
+ 0064				PrintChar PROC
+					; assume that the character to write has already
+					; been placed in DL
+ 0064  50				push	AX
+
+ 0065  B4 02				mov	AH, 02h	; this is the DOS code to write a char
+ 0067  CD 21				int	21h	; call DOS to write the character
+
+ 0069  58				pop	AX
+ 006A  C3				ret
+
+ 006B				PrintChar ENDP
+
+				; this function writes a string starting from the OFFSET
+				; stored in DX
+ 006B				PrintString PROC
+ 006B  53				push	BX
+ 006C  52				push	DX
+ 006D  9C				pushf
+
+					; put the address into BX
+ 006E  8B DA				mov	BX, DX
+
+ 0070				print:
+					; put the next char in DL and print it
+ 0070  8A 17				mov	DL, [BX]
+ 0072  80 FA 00				cmp	DL, 0
+ 0075  74 06				je	done
+ 0077  E8 FFEA				call	PrintChar
+ 007A  43				inc	BX	; increment BX to the next position
+ 007B  EB F3				jmp	print
+
+ 007D				done:
+ 007D  9D				popf
+ 007E  5A				pop	DX
+ 007F  5B				pop	BX
+ 0080  C3				ret
+ 0081				PrintString ENDP
+
+				; this writes the single hex digit in DL to the screen
+ 0081				PrintHexDigit PROC
+ 0081  52				push	DX
+ 0082  9C				pushf
+
+					; get just the last digit in DL
+ 0083  80 E2 0F				AND	DL, 00001111b
+
+					; find out which set of digits to print
+ 0086  80 FA 0A				cmp	DL, 0Ah
+ 0089  7C 02				jl	decimal
+ 008B  EB 05				jmp	hex
+
+ 008D				decimal:
+ 008D  80 C2 30				add	DL, 48
+ 0090  EB 03				jmp	print
+
+ 0092				hex:
+ 0092  80 C2 37				add	DL, 55
+
+ 0095				print:
+ 0095  E8 FFCC				call PrintChar
+
+ 0098  9D				popf
+ 0099  5A				pop DX
+ 009A  C3				ret
+ 009B				PrintHexDigit ENDP
+
+ 009B				main PROC
+ 009B  B8 ---- R			mov	AX, @data
+ 009E  8E D8				mov	DS, AX
+
+ 00A0  B2 AB				mov	DL, 0ABh
+ 00A2  E8 0000 E			call dumpregs
+ 00A5  E8 FFD9				call	PrintHexDigit
+
+ 00A8  E8 0000 E			call dumpregs
+
+ 00AB  B8 4C00				mov	AX, 4C00h
+ 00AE  CD 21				int	21h
+ 00B0				main ENDP
+
+				END main
+Microsoft (R) Macro Assembler Version 6.11		    02/10/19 20:34:15
+funcs							     Symbols 2 - 1
+
+
+
+
+Segments and Groups:
+
+                N a m e                 Size     Length   Align   Combine Class
+
+DGROUP . . . . . . . . . . . . .	GROUP
+_DATA  . . . . . . . . . . . . .	16 Bit	 0018	  Word	  Public  'DATA'	
+STACK  . . . . . . . . . . . . .	16 Bit	 0200	  Para	  Stack	  'STACK'	 
+_TEXT  . . . . . . . . . . . . .	16 Bit	 00B0	  Word	  Public  'CODE'	
+
+
+Procedures,  parameters and locals:
+
+                N a m e                 Type     Value    Attr
+
+DumpLongRegs . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+DumpMem  . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+DumpRegs . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+Factorial  . . . . . . . . . . .	P Near	 001B	  _TEXT	Length= 002B Public STDCALL
+  start  . . . . . . . . . . . .	L Near	 0027	  _TEXT	
+  done . . . . . . . . . . . . .	L Near	 002F	  _TEXT	
+  zero . . . . . . . . . . . . .	L Near	 0038	  _TEXT	
+  overflow . . . . . . . . . . .	L Near	 003D	  _TEXT	
+Fibonacci  . . . . . . . . . . .	P Near	 0046	  _TEXT	Length= 001E Public STDCALL
+  start  . . . . . . . . . . . .	L Near	 0057	  _TEXT	
+  done . . . . . . . . . . . . .	L Near	 005F	  _TEXT	
+NewLine  . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+Polynomial . . . . . . . . . . .	P Near	 0000	  _TEXT	Length= 001B Public STDCALL
+PrintChar  . . . . . . . . . . .	P Near	 0064	  _TEXT	Length= 0007 Public STDCALL
+PrintHexDigit  . . . . . . . . .	P Near	 0081	  _TEXT	Length= 001A Public STDCALL
+  decimal  . . . . . . . . . . .	L Near	 008D	  _TEXT	
+  hex  . . . . . . . . . . . . .	L Near	 0092	  _TEXT	
+  print  . . . . . . . . . . . .	L Near	 0095	  _TEXT	
+PrintString  . . . . . . . . . .	P Near	 006B	  _TEXT	Length= 0016 Public STDCALL
+  print  . . . . . . . . . . . .	L Near	 0070	  _TEXT	
+  done . . . . . . . . . . . . .	L Near	 007D	  _TEXT	
+PrintVersion . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadChar . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadHexByte  . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadHexDigit . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadHexWord  . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadInt  . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadLine . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadUInt . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+SkipToEOL  . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+TraceRegisterChanges . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+Version  . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteBit . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteChar  . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteHexByte . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteHexDigit  . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteHexLong . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteHexWord . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteInt . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteString  . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteUInt  . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+main . . . . . . . . . . . . . .	P Near	 009B	  _TEXT	Length= 0015 Public STDCALL
+
+
+Symbols:
+
+                N a m e                 Type     Value    Attr
+
+@CodeSize  . . . . . . . . . . .	Number	 0000h	 
+@DataSize  . . . . . . . . . . .	Number	 0000h	 
+@Interface . . . . . . . . . . .	Number	 0003h	 
+@Model . . . . . . . . . . . . .	Number	 0002h	 
+@code  . . . . . . . . . . . . .	Text   	 _TEXT
+@data  . . . . . . . . . . . . .	Text   	 DGROUP
+@fardata?  . . . . . . . . . . .	Text   	 FAR_BSS
+@fardata . . . . . . . . . . . .	Text   	 FAR_DATA
+@stack . . . . . . . . . . . . .	Text   	 DGROUP
+stringy  . . . . . . . . . . . .	Byte	 0000	  _DATA	
+
+	   0 Warnings
+	   0 Errors

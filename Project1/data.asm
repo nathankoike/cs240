@@ -1,0 +1,44 @@
+TITLE data
+
+INCLUDE cs240.inc
+.8086
+
+.data
+testByte    BYTE    "0"
+testSByte   SBYTE   -1
+testWord    WORD    0
+testSWord   SWORD   -1
+testDWord   DWORD   65536
+testSDword  SDWORD  -257
+testFWord   FWORD   0FFFFFFFFFFFFh
+testQWord   QWord   0FFFFFFFFFFFFFFFFh
+testTByte   TBYTE   8000000000000001
+testReal4   Real4   1.5
+testReal8   Real8   3.2E-260
+testReal10  Real10  4.6E+4096
+
+.code
+main PROC
+     push DS
+     push AX
+
+     mov AX, @data
+     mov DS, AX
+
+     pop AX
+
+     ; move the start location of the data into DX for DumpMem
+     mov DX, OFFSET testByte
+
+     ; set CX to be 60 so that 60 bytes get displayed
+     mov CX, 60
+
+     call DumpMem
+     call NewLine
+
+     pop DS
+
+     mov AX, 4C00h
+     int 21h
+main ENDP
+END main

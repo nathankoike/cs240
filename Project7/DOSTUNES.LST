@@ -1,0 +1,1093 @@
+Microsoft (R) Macro Assembler Version 6.11		    04/24/19 04:19:43
+dostunes.asm						     Page 1 - 1
+
+
+				; INCLUDE cs240.inc
+				; INCLUDE lablib.inc
+
+				.model small, stdcall
+				.stack 400h
+
+				.386
+
+ = 6200				CMDTAIL = 6200h
+ = 0081				INPUTCMD = 81h
+ = 3D00				OPENFILE = 3D00h
+ = 3F00				READFILE = 3F00h
+ = 4C00				EXITDOS = 4C00h
+ = 0021				DOS = 21h
+
+ = 0042				TIMER_DATA_PORT		= 42h
+ = 0043				TIMER_CONTROL_PORT	= 43h
+ = 0061				SPEAKER_PORT		= 61h
+ = 00B6				READY_TIMER		= 0B6h
+
+				; tune this for desktop
+				;CPU_CLOCK = 1196000 ; this goes in AX. in DX put 12h
+
+				; tune this for laptop
+ = 00122A64			CPU_CLOCK = 1190500 ; this goes in AX. in DX put 12h
+
+ 0000				.data
+				; CITE: Professor Bailey
+				; DESC: Convinced me to use a more musician-friendly parsing scheme
+				; 			this parsing scheme is in the following 3 arrays
+
+				; express all the notes as the base note and the sharp variant
+ 0000 4320 4323 4420 4423	NotS WORD "C ", "C#", "D ", "D#", "E ", "F ", "F#", "G ", "G#", "A ", "A#", "B "
+       4520 4620 4623
+       4720 4723 4120
+       4123 4220
+ 0018  0000				   WORD 0	; this ends the notes
+
+				; express all the notes as the base note and the flat variant
+ 001A 4320 4462 4420 4562	NotF WORD "C ", "Db", "D ", "Eb", "E ", "F ", "Gb", "G ", "Ab", "A ", "Bb", "B "
+       4520 4620 4762
+       4720 4162 4120
+       4262 4220
+ 0032  0000				   WORD 0	; this ends the notes
+
+				; express all the notes as the frequency they correspond with in the 4th octave
+ 0034 0106 0115 0126 0137	Fre4 WORD 0262, 0277, 0294, 0311, 0330, 0349, 0370, 0392, 0415, 0440, 0466, 0494
+       014A 015D 0172
+       0188 019F 01B8
+       01D2 01EE
+
+
+
+				; this buffer is used to accept input from the file
+ 004C 00 00 00 00 00 00		Buffer  BYTE  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0
+       00 00 00 00 00 00
+
+				; this is the filename
+ 0058 00			FName	BYTE	?
+
+ 0000				.code
+
+				; ==============================================================================
+				; ============================= OLD FUNCTIONS ==================================
+				; ==============================================================================
+
+				; FUNCTIONS FROM PROJECT4
+
+				; write the character represented by the bits in DL to the screen
+ 0000				PrintChar PROC
+ 0000  50				push	AX
+ 0001  B4 02				mov	AH, 02h	; this is the DOS code to write a char
+ 0003  CD 21				int	21h	; call DOS to write the character
+ 0005  58				pop	AX
+ 0006  C3				ret
+ 0007				PrintChar ENDP
+
+				; THIS FUCTION HAS BEEN MODIFIED FROM ITS ORIGINAL FORM TO PRNINT LOWERCASE
+				; LETTERS INSTEAD OF UPPERCASE LETTERS FOR THE HEX DIGITS
+				; this writes the lower 4 bits in DL to the screen
+ 0007				PrintHexDigit PROC
+ 0007  52				push	DX
+ 0008  9C				pushf
+					; get just the last digit in DL
+ 0009  80 E2 0F				AND	DL, 00001111b
+					; find out which set of digits to print
+ 000C  80 FA 0A				cmp	DL, 0Ah
+ 000F  7C 02				jl	decimal
+ 0011  EB 05				jmp	hex
+ 0013				decimal:
+ 0013  80 C2 30				add	DL, 48
+ 0016  EB 03				jmp	print
+ 0018				hex:
+ 0018  80 C2 57				add	DL, 87
+ 001B				print:
+ 001B  E8 FFE2				call PrintChar
+ 001E  9D				popf
+ 001F  5A				pop DX
+ 0020  C3				ret
+ 0021				PrintHexDigit ENDP
+
+				; write the whole byte in DL to the screen
+ 0021				PrintHexByte PROC
+ 0021  52				push	DX
+ 0022  9C				pushf
+ 0023  52				push	DX
+ 0024  51				push	CX
+					; set CL to use in the shift instruction
+ 0025  B1 04				mov	CL, 4
+					; move the higher 4 bits into the lower 4 bits to get them to print
+ 0027  D3 EA				SHR	DX, CL
+ 0029  E8 FFDB				call PrintHexDigit
+ 002C  59				pop	CX
+ 002D  5A				pop	DX
+ 002E  E8 FFD6				call PrintHexDigit
+ 0031  9D				popf
+ 0032  5A				pop	DX
+ 0033  C3				ret
+ 0034				PrintHexByte ENDP
+
+				; this function writes a string starting from the OFFSET stored in DX
+ 0034				PrintString PROC
+ 0034  53				push	BX
+ 0035  52				push	DX
+ 0036  9C				pushf
+					; put the address into BX
+ 0037  8B DA				mov	BX, DX
+ 0039				print:
+					; put the next char in DL and print it
+ 0039  8A 17				mov	DL, [BX]
+ 003B  80 FA 00				cmp	DL, 0
+ 003E  74 06				je	done
+ 0040  E8 FFBD				call	PrintChar
+ 0043  43				inc	BX	; increment BX to the next position
+ 0044  EB F3				jmp	print
+ 0046				done:
+ 0046  9D				popf
+ 0047  5A				pop	DX
+ 0048  5B				pop	BX
+ 0049  C3				ret
+ 004A				PrintString ENDP
+
+				; this function writes AX to the screen as a hex word
+ 004A				PrintHexWord PROC
+ 004A  52				push	DX
+
+ 004B  8A D4				mov	DL, AH
+ 004D  E8 FFD1				call	PrintHexByte
+
+ 0050  8A D0				mov	DL, AL
+ 0052  E8 FFCC				call	PrintHexByte
+
+ 0055  5A				pop	DX
+ 0056  C3				ret
+ 0057				PrintHexWord ENDP
+
+ 0057				LineBreak PROC
+ 0057  52				push	DX
+
+					; add a carriage return
+ 0058  B2 0D				mov	DL, 13
+ 005A  E8 FFA3				call	PrintChar
+
+					; move the cursor to the line below
+ 005D  B2 0A				mov DL, 10
+ 005F  E8 FF9E				call	PrintChar
+
+ 0062  5A				pop	DX
+ 0063  C3				ret
+ 0064				LineBreak ENDP
+
+				; this gets the file name from the command line
+ 0064				GetFileName PROC
+ 0064  50				push	AX
+ 0065  53				push	BX
+ 0066  56				push	SI
+ 0067  06				push	ES
+ 0068  9C				pushf
+
+					; get a pointer to the command tail in BX
+ 0069  B8 6200				mov	AX, CMDTAIL
+ 006C  CD 21				int	DOS
+
+ 006E  8E C3				mov	ES, BX
+
+					; this is for indexing the command tail
+ 0070  BE 0081				mov SI, INPUTCMD
+
+					; move the offset of the filename into BX
+ 0073  BB 0058 R			mov	BX, OFFSET FName
+				; cleans out unreadable characters from the command line
+ 0076				clean:
+ 0076  46				inc	SI
+
+					; ES is needed here to read from the command line instead of from DS
+ 0077  26: 8A 04			mov	AL, ES:[SI]
+
+ 007A  3C 20				cmp	AL, ' '
+ 007C  76 F8				jbe clean
+
+ 007E  3C 7E				cmp	AL, '~'
+ 0080  77 F4				ja	clean
+				; grabs the file name
+ 0082				top:
+ 0082  88 07				mov	[BX], AL
+
+ 0084  46				inc	SI
+
+					; ES is needed here to read from the command line instead of from DS
+ 0085  26: 8A 04			mov	AL, ES:[SI]
+
+ 0088  3C 20				cmp	AL, ' '
+ 008A  76 07				jbe done
+
+ 008C  3C 7E				cmp	AL, '~'
+ 008E  77 03				ja	done
+
+ 0090  43				inc	BX
+
+ 0091  EB EF				jmp top
+ 0093				done:
+					; null terminate the string
+ 0093  43				inc BX
+
+ 0094  50				push	AX
+ 0095  B8 0000				mov	AX, 0
+ 0098  89 07				mov	[BX], AX
+ 009A  58				pop	AX
+
+					; pop and return
+ 009B  9D				popf
+ 009C  07				pop	ES
+ 009D  5E				pop	SI
+ 009E  5B				pop	BX
+ 009F  58				pop	AX
+ 00A0  C3				ret
+ 00A1				GetFileName ENDP
+
+				; this gets input from the file
+				; it takes the number of characters to read in CX
+				; it returns the number of characters it read in BX
+ 00A1				GetInput PROC
+ 00A1  50				push	AX
+ 00A2  52				push	DX
+
+					; move the file handle into the proper place
+ 00A3  8B D8				mov	BX, AX
+
+					; move provide the place to store all the input from the file in DX
+ 00A5  BA 004C R			mov	DX, OFFSET Buffer
+
+					; provide the proper DOS interrupt in AX
+ 00A8  B8 3F00				mov	AX, READFILE
+ 00AB  CD 21				int	DOS
+
+					; save the number of characters read from the file
+ 00AD  8B D8				mov	BX, AX
+
+ 00AF  5A				pop	DX
+ 00B0  58				pop	AX
+ 00B1  C3				ret
+ 00B2				GetInput ENDP
+
+				; this returns the file handle in AX or sets the carry flag if there is an error
+ 00B2				GetHandle PROC
+ 00B2  52				push	DX
+					; move the filename into DX
+ 00B3  BA 0058 R			mov	DX, OFFSET FName
+
+					; attempt to open the file
+ 00B6  B8 3D00				mov	AX, OPENFILE
+ 00B9  CD 21				int DOS
+
+					; see if there was an error
+ 00BB  73 01				jnc	done
+
+					; this sets the carry flag
+ 00BD  F9				STC
+ 00BE				done:
+ 00BE  5A				pop	DX
+ 00BF  C3				ret
+ 00C0				GetHandle ENDP
+
+
+
+				; FUNCTIONS FROM PROJECT5
+
+				; convert ms to seconds and 5/100ths of a second
+				; number of ms to convert is in AX
+				; returns ss.ss in AX
+				; return the number of minutes in CL
+ 00C0				GetSeconds PROC
+ 00C0  52				push	DX
+ 00C1  51				push	CX
+ 00C2  9C				pushf
+				; this gets the number of seconds to delay in 1/100ths of a second
+				; this number is still 5x more accurate than the system clock but we will
+				; account for this later
+ 00C3				toHundredths:
+ 00C3  BA 0000				mov	DX, 0
+ 00C6  B9 000A				mov	CX, 10
+
+ 00C9  F7 F1				div	CX
+				; this properly converts the number of 1/100ths of a second into seconds and
+				; 1/100ths of a second
+ 00CB				toSeconds:
+ 00CB  B9 0064				mov	CX, 100
+ 00CE  BA 0000				mov	DX, 0
+ 00D1  F7 F1				div	CX
+
+					; save the 1/100ths, move the seconds to the right spot, move the 1/100ths
+					; to the right spot
+ 00D3  8A CA				mov	CL, DL
+ 00D5  8A E0				mov	AH, AL
+ 00D7  8A C1				mov	AL, CL
+				; now, we account for the 1/100ths of a second being 5x more accurate than the
+				; system clock
+ 00D9				accuracy:
+ 00D9  50				push	AX
+ 00DA  B1 05				mov	Cl, 5
+ 00DC  B4 00				mov	AH, 0
+ 00DE  F6 F1				div	CL
+
+					; save the remainder, restore the original value, and subtract the remainder
+ 00E0  8A CC				mov	CL, AH
+ 00E2  58				pop	AX
+ 00E3  2A C1				sub	AL, CL
+ 00E5				done:
+ 00E5  9D				popf
+ 00E6  59				pop	CX
+ 00E7  5A				pop	DX
+ 00E8  C3				ret
+ 00E9				GetSeconds ENDP
+
+				; convert seconds to minutes
+				; the number of seconds is in BH
+				; return the number of minutes in AL
+ 00E9				GetMins PROC
+ 00E9  51				push	CX
+
+ 00EA  B1 3C				mov	CL, 60
+ 00EC  B8 0000				mov AX, 0
+ 00EF  8A C7				mov	AL, BH
+
+ 00F1  F6 F1				div	CL
+
+					; move the remainder of the seconds into the seconds
+ 00F3  8A FC				mov	BH, AH
+
+ 00F5  59				pop	CX
+
+					; there will never be any hours, so set that value to 0
+ 00F6  B4 00				mov	AH, 0
+
+ 00F8  C3				ret
+ 00F9				GetMins ENDP
+
+				; convert milliseconds to hh:mm:ss.ss
+				; time format
+				; hh:mm  	ss.ss
+				; AH:AL   BH:BL
+				; the number of milliseconds to delay is in AX
+ 00F9				GetDelay PROC
+ 00F9  51				push	CX
+
+ 00FA  E8 FFC3				call	GetSeconds
+ 00FD  8B D8				mov	BX, AX
+
+ 00FF  E8 FFE7				call	GetMins
+
+ 0102  59				pop	CX
+ 0103  C3				ret
+ 0104				GetDelay ENDP
+
+				; get the final amount of seconds in BX
+				; the number of seconds to add is in BX
+				; the starting number of seconds is in DX
+				; the final number of seconds is in BX with the carry added to AL
+ 0104				GetFinalSec PROC
+ 0104  51				push	CX
+ 0105  52				push	DX
+
+					; get the sum final number of seconds in BX
+ 0106  03 DA				add	BX, DX
+ 0108				hundredths:
+					; prep for division
+ 0108  50				push	AX
+
+ 0109  8B C3				mov	AX, BX
+ 010B  B1 64				mov	CL, 100
+ 010D  B4 00				mov	AH, 0
+
+					; divide the 1/100ths value
+ 010F  F6 F1				div	CL
+
+					; this is the final value of the 1/100ths value
+ 0111  8A DC				mov	BL, AH
+
+					; this is the carry into the seconds place
+ 0113  02 F8				add	BH, AL
+
+					; restore the value of AX
+ 0115  58				pop	AX
+ 0116				seconds:
+					; prepare to shift
+ 0116  50				push	AX
+
+ 0117  8B C3				mov	AX, BX
+ 0119  B1 08				mov	CL, 8
+
+					; move AH into AL
+ 011B  D3 E8				shr	AX, CL
+
+					; prep for division
+ 011D  B1 3C				mov	CL, 60
+
+					; divide the seconds value
+ 011F  B4 00				mov	AH, 0
+ 0121  F6 F1				div	CL
+
+					; this is the final value of the seconds value
+ 0123  8A FC				mov	BH, AH
+
+					; store the carry value from seconds into minutes
+ 0125  8A C8				mov	CL, AL
+
+					; restore the value of AX
+ 0127  58				pop	AX
+
+					; this is the carry into the seconds place
+ 0128  02 C1				add	AL, CL
+ 012A				done:
+ 012A  5A				pop	DX
+ 012B  59				pop	CX
+ 012C  C3				ret
+ 012D				GetFinalSec ENDP
+
+				; get the final amount of hours and minutes in AX
+				; the number of hours and minutes to add is in AX
+				; the starting number of hours and minutes is in CX
+ 012D				GetFinalHrMin PROC
+ 012D  52				push	DX
+
+					; get the sum of the final number of hours and minutes
+ 012E  02 E5				add	AH, CH
+ 0130  02 C1				add	AL, CL
+ 0132				minutes:
+					; prepare to divide
+ 0132  50				push	AX
+ 0133  B2 3C				mov	DL,	60
+ 0135  B4 00				mov	AH, 0
+
+ 0137  F6 F2				div	DL
+
+					; the number of hours previously stored in the minutes of AL is now in AL
+					; the number of minutes remaning should be in AH
+ 0139  8A D4				mov	DL, AH
+ 013B  8A F0				mov	DH, AL
+
+					; restore AX
+ 013D  58				pop	AX
+
+					; DX now has the proper format for AX, but it hasn't added the carry hour
+ 013E  8A C2				mov	AL, DL
+ 0140  02 E6				add	AH, DH
+				; the time is reported in 24 hour mode, so account for that here
+ 0142				hours:
+ 0142  50				push	AX
+
+					; prepare to shift
+ 0143  51				push	CX
+ 0144  B1 08				mov	CL, 8
+
+					; move AH into AL
+ 0146  D3 E8				shr	AX, CL
+
+					; restore the value of CX
+ 0148  59				pop	CX
+
+					; prepare to divide
+ 0149  B2 18				mov	DL, 24
+ 014B  B4 00				mov	AH, 0
+
+ 014D  F6 F2				div	DL
+
+					; the remainder will be the number of hours at the end, so that's what
+					; we care about here
+ 014F  8A F4				mov	DH, AH
+
+					; restore the value of AX
+ 0151  58				pop	AX
+
+					; now move the number of hours back into AH
+ 0152  8A E6				mov	AH, DH
+ 0154				done:
+ 0154  5A				pop	DX
+ 0155  C3				ret
+ 0156				GetFinalHrMin ENDP
+
+				; get the system time in CX and DX
+ 0156				GetSysTime PROC
+ 0156  50				push	AX
+ 0157  53				push	BX
+
+ 0158  B8 2C00				mov	AX, 2C00h
+ 015B  CD 21				int	21h
+
+ 015D  5B				pop	BX
+ 015E  58				pop	AX
+ 015F  C3				ret
+ 0160				GetSysTime ENDP
+
+				; this finds the final system time at the end of the delay
+				; its parameters for the time to delay are as follows
+				; hh:mm  	ss.ss
+				; AH:AL   BH:BL
+				; its return takes the exact same shape
+ 0160				GetFinalTime PROC
+ 0160  E8 FFF3				call	GetSysTime
+ 0163  E8 FF9E				call	GetFinalSec
+ 0166  E8 FFC4				call	GetFinalHrMin
+ 0169  C3				ret
+ 016A				GetFinalTime ENDP
+
+				; delay for some number of milliseconds. this number is found on the stack
+ 016A				Delay PROC
+ 016A  50				push	AX				;			+0
+ 016B  53				push	BX				;			+2
+ 016C  51				push	CX				;			+4
+ 016D  52				push	DX				;			+6
+ 016E  55				push	BP				;			+8
+ 016F  9C				pushf						;			+10
+					; return address			+12
+
+ 0170  8B EC				mov	BP, SP
+
+					; move the number of milliseconds to delay into AX
+ 0172  8B 46 0E				mov	AX, [BP + 14]
+
+					; see if the number of milliseconds to delay is less than the number needed
+					; to round up to 5/100 of a second (the unit reported by the machine)
+ 0175  83 F8 32				cmp	AX, 50
+ 0178  72 13				jb	done
+
+					; time format
+					; hh:mm  	ss.ss
+					; AH:AL   BH:BL
+ 017A  E8 FF7C				call	GetDelay
+
+					; this gets the final system time for comparison
+					; time format
+					; hh:mm  	ss.ss
+					; AH:AL   BH:BL
+ 017D  E8 FFE0				call	GetFinalTime
+ 0180				top:
+ 0180  E8 FFD3				call	GetSysTime
+
+ 0183  3B C1				cmp	AX, CX
+ 0185  77 F9				ja	top
+
+ 0187  3B DA				cmp	BX, DX
+ 0189  72 02				jb	done
+
+ 018B  EB F3				jmp	top
+ 018D				done:
+ 018D  9D				popf					;			+10
+ 018E  5D				pop	BP				;			+8
+ 018F  5A				pop	DX				;			+6
+ 0190  59				pop	CX				;			+4
+ 0191  5B				pop	BX				;			+2
+ 0192  58				pop	AX				;			+0
+ 0193  C3				ret
+ 0194				Delay ENDP
+
+
+
+				; from a homework assignment
+
+				; multiply AX by 10
+ 0194				timesTen	PROC
+ 0194  53				push	BX
+ 0195  51				push	CX
+ 0196  52				push	DX
+
+					; DX = AX * 2
+ 0197  8B D0				mov	DX, AX
+ 0199  D1 E2				shl	DX, 1
+
+					; AX *= 8
+ 019B  B1 03				mov	CL, 3
+ 019D  D3 E0				shl	AX, CL
+
+					; 8AX + 2AX = 10AX
+ 019F  03 C2				add	AX, DX
+
+ 01A1  5A				pop	DX
+ 01A2  59				pop	CX
+ 01A3  5B				pop	BX
+ 01A4  C3				ret	; AX is now 10x its original value
+ 01A5				timesTen	ENDP
+
+				; ==============================================================================
+				; ==================== NEW FUNCTIONS BELOW THIS LINE ===========================
+				; ==============================================================================
+
+				; CITE: Professor Bailey
+				; DESC: Provided this code on Piazza to turn the speaker on
+ 01A5				SpeakerOn PROC
+ 01A5  9C				pushf
+ 01A6  50				push	ax
+
+ 01A7  E4 61				in	al, SPEAKER_PORT		; Read the speaker register
+ 01A9  0C 03				or	al, 03h				; Set the two low bits high
+ 01AB  E6 61				out	SPEAKER_PORT, al		; Write the speaker register
+ 01AD				done:
+ 01AD  58				pop	ax
+ 01AE  9D				popf
+ 01AF  C3				ret
+ 01B0				SpeakerOn ENDP
+
+				; CITE: Professor Bailey
+				; DESC: Provided this code on Piazza to turn the speaker off
+ 01B0				SpeakerOff PROC
+ 01B0  9C				pushf
+ 01B1  50				push	ax
+
+ 01B2  E4 61				in	al, SPEAKER_PORT		; Read the speaker register
+ 01B4  24 FC				and	al, 0FCh			; Clear the two low bits high
+ 01B6  E6 61				out	SPEAKER_PORT, al		; Write the speaker register
+
+ 01B8  58				pop	ax
+ 01B9  9D				popf
+ 01BA  C3				ret
+ 01BB				SpeakerOff ENDP
+
+				; CITE: Professor Bailey
+				; DESC: Provided a call to this function in the skeleton program provided on
+				; 			Piazza
+				; take the frequency in BX and return a timer count in DX
+ 01BB				NoteFrequencyToTimerCount	PROC
+ 01BB  66| 50				push	EAX
+ 01BD  66| 53				push	EBX
+
+ 01BF  66| B8 00122A64			mov	EAX, CPU_CLOCK
+					; CITE: Eliza
+					; DESC: on the Monday when Professor Bailey wasn't here and we were to work on
+					;       out project, Eliza and I tuned the CPU speaker. This was her idea
+ 01C5  BA 0012				mov	DX, 12h
+
+					; we never need to use EBX becasue the highest frequency in normal range of
+					; human hearing is 20kHz, well below the maximum 65535Hz allowed in BX
+ 01C8  F7 F3				div	BX
+
+					; move the timer count into DX. this will never be larger than 65535
+ 01CA  8B D0				mov	DX, AX
+
+ 01CC  66| 5B				pop	EBX
+ 01CE  66| 58				pop	EAX
+ 01D0  C3				ret
+ 01D1				NoteFrequencyToTimerCount	ENDP
+
+				; CITE: Professor Bailey
+				; DESC: Provided this code on Piazza to play a frequency through the CPU speaker
+ 01D1				PlayFrequency PROC
+					; I made an edit here to change the frequency to be found in BX instead of DX
+					;; Frequency is found in BX
+
+ 01D1  9C				pushf
+ 01D2  50				push	ax
+
+ 01D3  E8 FFE5				call	NoteFrequencyToTimerCount
+
+ 01D6  B0 B6				mov	al, READY_TIMER			; Get the timer ready
+ 01D8  E6 43				out	TIMER_CONTROL_PORT, al
+
+ 01DA  8A C2				mov	al, dl
+ 01DC  E6 42				out	TIMER_DATA_PORT, al		; Send the count low byte
+
+ 01DE  8A C6				mov	al, dh
+ 01E0  E6 42				out	TIMER_DATA_PORT, al		; Send the count high byte
+
+ 01E2  E8 FFC0				call	SpeakerOn
+
+					; there were more lines of code here to do things like play the note for a
+					; specified amount of time and to add a delay between notes but i removed
+					; those to handle them elsewhere
+
+ 01E5  58				pop	ax
+ 01E6  9D				popf
+ 01E7  C3				ret
+ 01E8				PlayFrequency ENDP
+
+				; this function plays a note for a specified amount of time
+				; this is where i moved handling the timing of notes
+				; the time of the note in ms is in CX and the note frequency in Hz is in EBX
+ 01E8				PlayNote	PROC
+ 01E8  66| 50				push	EAX
+ 01EA  66| 52				push	EDX
+ 01EC  9C				pushf
+
+ 01ED  66| B8 00000000			mov	EAX, 0
+ 01F3  66| BA 00000000			mov	EDX, 0
+ 01F9  51				push	CX	; delay works woth the stack so we need to push
+ 01FA  E8 FFD4				call	PlayFrequency
+ 01FD  E8 FF6A				call 	Delay
+ 0200  59				pop	CX	; make sure to pop off of the stack so we can return
+
+ 0201  9D				popf
+ 0202  66| 5A				pop	EDX
+ 0204  66| 58				pop	EAX
+ 0206  C3				ret
+ 0207				PlayNote	ENDP
+
+				; remove all the non-numeric characters from a file and return the first
+				; numeric character in DL
+ 0207				CleanFile	PROC
+ 0207  50				push	AX
+ 0208  53				push	BX
+ 0209  51				push	CX
+ 020A  9C				pushf
+
+ 020B				top:
+ 020B  B9 0001				mov	CX, 1
+ 020E  E8 FE90				call	GetInput
+
+					; check to see if we reached the end of the file
+ 0211  83 FB 01				cmp	BX, 1
+ 0214  75 0F				jne	done
+
+ 0216  BB 004C R			mov	BX, OFFSET Buffer
+ 0219  8A 17				mov	DL, [BX]
+
+					; filter out any non-numerical values
+ 021B  80 FA 30				cmp	DL, '0'
+ 021E  72 EB				jb	top
+ 0220  80 FA 39				cmp	DL, '9'
+ 0223  77 E6				ja	top
+
+ 0225				done:
+ 0225  9D				popf
+ 0226  59				pop	CX
+ 0227  5B				pop	BX
+ 0228  58				pop	AX
+ 0229  C3				ret
+ 022A				CleanFile	ENDP
+
+				; get the decimal number from a file into DX
+				; set the carry flag if we have reached the end of the file
+ 022A				LoadDecimal	PROC
+ 022A  50				push	AX
+ 022B  53				push	BX
+ 022C  51				push	CX
+ 022D  9C				pushf
+
+ 022E  BA 0000				mov	DX, 0	; clear DX
+ 0231  B9 0000				mov	CX, 0	; clear CX
+
+ 0234  E8 FFD0				call	CleanFile	; add the first numeric character to DX
+
+ 0237				number:
+					;	get the next character
+ 0237  B9 0001				mov	CX, 1
+ 023A  E8 FE64				call	GetInput
+
+					; check to see if we reached the end of the file
+ 023D  83 FB 01				cmp	BX, 1
+ 0240  75 1F				jne	ending
+
+					; check to see if the character is non-numeric
+ 0242  BB 004C R			mov	BX, OFFSET Buffer
+ 0245  8A 0F				mov	CL, [BX]
+
+ 0247  80 F9 30				cmp	CL, '0'
+ 024A  72 1E				jb	done
+
+ 024C  80 F9 39				cmp	CL, '9'
+ 024F  77 19				ja	done
+
+					; at this point we know that there is another number
+					; get the numeric value represented by the last character in DX
+ 0251  83 EA 30				sub	DX, '0'
+
+					; multiply DX by 10
+ 0254  50				push	AX
+ 0255  8B C2				mov	AX, DX
+ 0257  E8 FF3A				call	timesTen
+ 025A  8B D0				mov	DX, AX
+ 025C  58				pop	AX
+
+					; add the next number to DX
+ 025D  03 D1				add	DX, CX
+
+ 025F  EB D6				jmp	number	; loop
+
+ 0261				ending:
+					; this is if we have reached the end of the file
+ 0261  9D				popf
+ 0262  F9				STC
+ 0263  9C				pushf
+ 0264  83 C2 30				add	DX, '0'	; just prevent the program from trying to divide by 0
+ 0267  83 C2 0A				add	DX, 10
+
+ 026A				done:
+					; get the numeric value represented by the last character in DX
+ 026A  83 EA 30				sub	DX, '0'
+
+ 026D  9D				popf
+ 026E  59				pop	CX
+ 026F  5B				pop	BX
+ 0270  58				pop	AX
+ 0271  C3				ret
+ 0272				LoadDecimal	ENDP
+
+
+				; ; load a note and change its octave if necessary
+				; LoadNote	PROC
+				; 	push	AX
+				; 	push	BX
+				; 	push	CX
+				; 	push	SI
+				; 	pushf
+				;
+				; 	mov	DX, 0	; clear DX
+				; 	mov	CX, 0	; clear CX
+				; 	mov	SI, 0	; clear SI
+				;
+				; note:
+				; 	;	get the next character
+				; 	mov	CX, 2
+				; 	call	GetInput
+				;
+				; 	; check to see if we reached the end of the file
+				; 	cmp	BX, 2
+				; 	jne	ending
+				;
+				; 	; check to see if the character is a note
+				; 	mov	BX, OFFSET Buffer
+				; 	mov	AX, [BX]
+				;
+				; sharps:
+				; 	; we now have the note, do let's find the frequency of the note in octave 4
+				; 	mov	BX, OFFSET NotS
+				; 	mov	CX, [BX + SI]
+				;
+				; 	cmp	CX, 0
+				; 	je	flats
+				;
+				; 	cmp	CX, AX
+				; 	je fill
+				;
+				; 	add	SI, 2
+				; 	jmp	sharps
+				;
+				; flats:
+				; 	; the note must be flat then
+				; 	; we need to clear SI again
+				; 	mov	 SI, 0
+				;
+				; 	mov	BX, OFFSET NotF
+				; 	mov	CX, [BX + SI]
+				;
+				; 	cmp	CX, AX
+				; 	je fill
+				;
+				; 	cmp	CX, 0
+				; 	je	ending
+				;
+				; 	add	SI, 2
+				; 	jmp	flats
+				;
+				; fill:
+				; 	; move the frequency into DX
+				; 	mov	BX, OFFSET Fre4
+				; 	mov	DX, [BX + SI]
+				;
+				; octave:
+				; 	; change the octave of the note we just loaded
+				; 	mov	BX, DX	; save the frequency of the note
+				;
+				; 	call	LoadDecimal	; load the octave number into DX
+				;
+				; 	; get the octave difference
+				; 	mov	CX, 4
+				; 	mov	dx, 3	; test code
+				; 	sub	CX, DX
+				;
+				; 	cmp	CX, 0080h	; check to see if we neet to perform 2's complement
+				; 	jb	shiftOct
+				;
+				; 	; this code was copied from Project3
+				; 	NOT	CX	; flip all the bits of AX and ...
+				; 	inc	CX	; ... add 1 to AX, thus completing 2's complement
+				;
+				; 	; the desired octave is higher, so we need to shift the frequency up
+				; 	shl	BX, CL
+				;
+				; 	mov	DX, BX	; relocate the return value properly
+				;
+				; 	jmp	done
+				; shiftOct:
+				; 	; the desired octave is lower, so we need to shift the frequency down
+				; 	shr	BX, CL
+				;
+				; 	mov	DX, BX ; relocate the return value properly
+				;
+				; 	jmp	done
+				;
+				; ending:
+				; 	; this is if we have reached the end of the file
+				; 	popf
+				; 	STC
+				; 	pushf
+				; 	mov	DX, 10	; set the value to be too low to do anything
+				;
+				; done:
+				; 	popf
+				; 	pop	SI
+				; 	pop	CX
+				; 	pop	BX
+				; 	pop	AX
+				; 	ret
+				; LoadNote	ENDP
+
+				; put the frequency from the input into BX and the timing into CX
+				; set the carry flag if there is more data in the file, clear it otherwise
+ 0272				ParseInput	PROC
+ 0272  50				push	AX
+ 0273  52				push	DX
+
+ 0274  F8				CLC	; we need this to pass on whether or not we are at the end of the file
+
+ 0275  E8 FFB2				call	LoadDecimal
+ 0278  8B DA				mov	BX, DX
+
+ 027A  E8 FFAD				call	LoadDecimal
+ 027D  8B CA				mov	CX, DX
+
+ 027F  5A				pop	DX
+ 0280  58				pop	AX
+ 0281  C3				ret
+ 0282				ParseInput	ENDP
+
+				; play all the frequencies and timings in a file
+ 0282				PlayFile	PROC
+ 0282				top:
+ 0282  E8 FFED				call	ParseInput	; return the note frequency and duration in BX and CX
+
+					; now that we have the note we can play it
+ 0285  E8 FF60				call	PlayNote
+
+ 0288  73 F8				jnc	top
+
+ 028A				done:
+ 028A  C3				ret
+ 028B				PlayFile	ENDP
+
+ 028B				main PROC
+ 028B  B8 ---- R			mov	AX, @data
+ 028E  8E D8			  mov	DS, AX
+
+ 0290  E8 FF12				call	SpeakerOn
+
+ 0293  F8				clc
+ 0294  E8 FDCD				call	GetFilename
+ 0297  E8 FE18				call	GetHandle	; AX now has the file handle
+ 029A  72 03				jc	skip
+
+ 029C  E8 FFE3				call	PlayFile
+
+ 029F				skip:
+ 029F  E8 FF0E				call	SpeakerOff
+
+ 02A2  B8 4C00			  mov     AX, EXITDOS
+ 02A5  CD 21			  int     DOS
+ 02A7				main ENDP
+
+				END main
+Microsoft (R) Macro Assembler Version 6.11		    04/24/19 04:19:43
+dostunes.asm						     Symbols 2 - 1
+
+
+
+
+Segments and Groups:
+
+                N a m e                 Size     Length   Align   Combine Class
+
+DGROUP . . . . . . . . . . . . .	GROUP
+_DATA  . . . . . . . . . . . . .	16 Bit	 0059	  Word	  Public  'DATA'	
+STACK  . . . . . . . . . . . . .	16 Bit	 0400	  Para	  Stack	  'STACK'	 
+_TEXT  . . . . . . . . . . . . .	16 Bit	 02A7	  Word	  Public  'CODE'	
+
+
+Procedures,  parameters and locals:
+
+                N a m e                 Type     Value    Attr
+
+CleanFile  . . . . . . . . . . .	P Near	 0207	  _TEXT	Length= 0023 Public STDCALL
+  top  . . . . . . . . . . . . .	L Near	 020B	  _TEXT	
+  done . . . . . . . . . . . . .	L Near	 0225	  _TEXT	
+Delay  . . . . . . . . . . . . .	P Near	 016A	  _TEXT	Length= 002A Public STDCALL
+  top  . . . . . . . . . . . . .	L Near	 0180	  _TEXT	
+  done . . . . . . . . . . . . .	L Near	 018D	  _TEXT	
+GetDelay . . . . . . . . . . . .	P Near	 00F9	  _TEXT	Length= 000B Public STDCALL
+GetFileName  . . . . . . . . . .	P Near	 0064	  _TEXT	Length= 003D Public STDCALL
+  clean  . . . . . . . . . . . .	L Near	 0076	  _TEXT	
+  top  . . . . . . . . . . . . .	L Near	 0082	  _TEXT	
+  done . . . . . . . . . . . . .	L Near	 0093	  _TEXT	
+GetFinalHrMin  . . . . . . . . .	P Near	 012D	  _TEXT	Length= 0029 Public STDCALL
+  minutes  . . . . . . . . . . .	L Near	 0132	  _TEXT	
+  hours  . . . . . . . . . . . .	L Near	 0142	  _TEXT	
+  done . . . . . . . . . . . . .	L Near	 0154	  _TEXT	
+GetFinalSec  . . . . . . . . . .	P Near	 0104	  _TEXT	Length= 0029 Public STDCALL
+  hundredths . . . . . . . . . .	L Near	 0108	  _TEXT	
+  seconds  . . . . . . . . . . .	L Near	 0116	  _TEXT	
+  done . . . . . . . . . . . . .	L Near	 012A	  _TEXT	
+GetFinalTime . . . . . . . . . .	P Near	 0160	  _TEXT	Length= 000A Public STDCALL
+GetHandle  . . . . . . . . . . .	P Near	 00B2	  _TEXT	Length= 000E Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 00BE	  _TEXT	
+GetInput . . . . . . . . . . . .	P Near	 00A1	  _TEXT	Length= 0011 Public STDCALL
+GetMins  . . . . . . . . . . . .	P Near	 00E9	  _TEXT	Length= 0010 Public STDCALL
+GetSeconds . . . . . . . . . . .	P Near	 00C0	  _TEXT	Length= 0029 Public STDCALL
+  toHundredths . . . . . . . . .	L Near	 00C3	  _TEXT	
+  toSeconds  . . . . . . . . . .	L Near	 00CB	  _TEXT	
+  accuracy . . . . . . . . . . .	L Near	 00D9	  _TEXT	
+  done . . . . . . . . . . . . .	L Near	 00E5	  _TEXT	
+GetSysTime . . . . . . . . . . .	P Near	 0156	  _TEXT	Length= 000A Public STDCALL
+LineBreak  . . . . . . . . . . .	P Near	 0057	  _TEXT	Length= 000D Public STDCALL
+LoadDecimal  . . . . . . . . . .	P Near	 022A	  _TEXT	Length= 0048 Public STDCALL
+  number . . . . . . . . . . . .	L Near	 0237	  _TEXT	
+  ending . . . . . . . . . . . .	L Near	 0261	  _TEXT	
+  done . . . . . . . . . . . . .	L Near	 026A	  _TEXT	
+NoteFrequencyToTimerCount  . . .	P Near	 01BB	  _TEXT	Length= 0016 Public STDCALL
+ParseInput . . . . . . . . . . .	P Near	 0272	  _TEXT	Length= 0010 Public STDCALL
+PlayFile . . . . . . . . . . . .	P Near	 0282	  _TEXT	Length= 0009 Public STDCALL
+  top  . . . . . . . . . . . . .	L Near	 0282	  _TEXT	
+  done . . . . . . . . . . . . .	L Near	 028A	  _TEXT	
+PlayFrequency  . . . . . . . . .	P Near	 01D1	  _TEXT	Length= 0017 Public STDCALL
+PlayNote . . . . . . . . . . . .	P Near	 01E8	  _TEXT	Length= 001F Public STDCALL
+PrintChar  . . . . . . . . . . .	P Near	 0000	  _TEXT	Length= 0007 Public STDCALL
+PrintHexByte . . . . . . . . . .	P Near	 0021	  _TEXT	Length= 0013 Public STDCALL
+PrintHexDigit  . . . . . . . . .	P Near	 0007	  _TEXT	Length= 001A Public STDCALL
+  decimal  . . . . . . . . . . .	L Near	 0013	  _TEXT	
+  hex  . . . . . . . . . . . . .	L Near	 0018	  _TEXT	
+  print  . . . . . . . . . . . .	L Near	 001B	  _TEXT	
+PrintHexWord . . . . . . . . . .	P Near	 004A	  _TEXT	Length= 000D Public STDCALL
+PrintString  . . . . . . . . . .	P Near	 0034	  _TEXT	Length= 0016 Public STDCALL
+  print  . . . . . . . . . . . .	L Near	 0039	  _TEXT	
+  done . . . . . . . . . . . . .	L Near	 0046	  _TEXT	
+SpeakerOff . . . . . . . . . . .	P Near	 01B0	  _TEXT	Length= 000B Public STDCALL
+SpeakerOn  . . . . . . . . . . .	P Near	 01A5	  _TEXT	Length= 000B Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 01AD	  _TEXT	
+main . . . . . . . . . . . . . .	P Near	 028B	  _TEXT	Length= 001C Public STDCALL
+  skip . . . . . . . . . . . . .	L Near	 029F	  _TEXT	
+timesTen . . . . . . . . . . . .	P Near	 0194	  _TEXT	Length= 0011 Public STDCALL
+
+
+Symbols:
+
+                N a m e                 Type     Value    Attr
+
+@CodeSize  . . . . . . . . . . .	Number	 0000h	 
+@DataSize  . . . . . . . . . . .	Number	 0000h	 
+@Interface . . . . . . . . . . .	Number	 0003h	 
+@Model . . . . . . . . . . . . .	Number	 0002h	 
+@code  . . . . . . . . . . . . .	Text   	 _TEXT
+@data  . . . . . . . . . . . . .	Text   	 DGROUP
+@fardata?  . . . . . . . . . . .	Text   	 FAR_BSS
+@fardata . . . . . . . . . . . .	Text   	 FAR_DATA
+@stack . . . . . . . . . . . . .	Text   	 DGROUP
+Buffer . . . . . . . . . . . . .	Byte	 004C	  _DATA	
+CMDTAIL  . . . . . . . . . . . .	Number	 6200h	 
+CPU_CLOCK  . . . . . . . . . . .	Number	 00122A64h   
+DOS  . . . . . . . . . . . . . .	Number	 0021h	 
+EXITDOS  . . . . . . . . . . . .	Number	 4C00h	 
+FName  . . . . . . . . . . . . .	Byte	 0058	  _DATA	
+Fre4 . . . . . . . . . . . . . .	Word	 0034	  _DATA	
+INPUTCMD . . . . . . . . . . . .	Number	 0081h	 
+NotF . . . . . . . . . . . . . .	Word	 001A	  _DATA	
+NotS . . . . . . . . . . . . . .	Word	 0000	  _DATA	
+OPENFILE . . . . . . . . . . . .	Number	 3D00h	 
+READFILE . . . . . . . . . . . .	Number	 3F00h	 
+READY_TIMER  . . . . . . . . . .	Number	 00B6h	 
+SPEAKER_PORT . . . . . . . . . .	Number	 0061h	 
+TIMER_CONTROL_PORT . . . . . . .	Number	 0043h	 
+TIMER_DATA_PORT  . . . . . . . .	Number	 0042h	 
+
+	   0 Warnings
+	   0 Errors

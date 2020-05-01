@@ -1,0 +1,1765 @@
+Microsoft (R) Macro Assembler Version 6.11		    02/17/19 15:42:11
+procs							     Page 1 - 1
+
+
+				TITLE procs
+
+				; Nate Koike
+				; procs.asm
+				; Spring 2019
+
+				INCLUDE CS240.inc
+			      C .NOLIST
+			      C .LIST
+			      C 
+				.8086
+
+ = 0020				SPACE = 32	; this is the ASCII code for the space character
+
+ 0000				.data
+ 0000 0000			oldAX	WORD	?
+ 0002 0000			oldBX	WORD	?
+ 0004 0000			oldCX	WORD	?
+ 0006 0000			oldDX	WORD	?
+ 0008 0000			oldSI	WORD	?
+ 000A 0000			oldDI	WORD	?
+ 000C 0000			oldBP	WORD	?
+ 000E 0000			oldSP	WORD	?
+ 0010 0000			oldFL	WORD	?
+
+				; this was used for testing HexOut
+ 0012 FF 00 01 10 A1		Hexy	BYTE	0FFh, 0h, 1h, 10h, 0a1h
+
+				; this is the general error message
+ 0017 52 65 67 69 73 74		Error	BYTE	"Register "
+       65 72 20
+ 0020 00 00			RegName	BYTE	?, ?	; the register's name goes here
+ 0022  27 73 20 76 61 6C		BYTE	"'s value has changed. Old value: ", 0
+       75 65 20 68 61 73
+       20 63 68 61 6E 67
+       65 64 2E 20 4F 6C
+       64 20 76 61 6C 75
+       65 3A 20 00
+ 0044 2C 20 4E 65 77 20		ErrorC	BYTE	", New value: ", 0
+       76 61 6C 75 65 3A
+       20 00
+ 0052 2E 20 00			Fin	BYTE	". ", 0
+
+				; this is the general flag error message
+ 0055 00			FlagN	BYTE	?
+ 0056  20 46 6C 61 67 20		BYTE	" Flag value has changed. Old value: ", 0
+       76 61 6C 75 65 20
+       68 61 73 20 63 68
+       61 6E 67 65 64 2E
+       20 4F 6C 64 20 76
+       61 6C 75 65 3A 20
+       00
+ 007B 2C 20 4E 65 77 20		FlagC	BYTE	", New value: ", 0
+       76 61 6C 75 65 3A
+       20 00
+ 0089 2E 20 00			FLagFin	BYTE	". ", 0
+ 008C 73 65 74 00		Set	BYTE	"set", 0
+ 0090 63 6C 65 61 72 00		Clear	BYTE	"clear", 0
+
+ 0000				.code
+				; Save the machine's state using global variables in memory
+ 0000				SaveMachineState PROC
+ 0000  A3 0000 R			mov	oldAX, AX
+ 0003  89 1E 0002 R			mov	oldBX, BX
+ 0007  89 0E 0004 R			mov	oldCX, CX
+ 000B  89 16 0006 R			mov	oldDX, DX
+ 000F  89 36 0008 R			mov	oldSI, SI
+ 0013  89 3E 000A R			mov	oldDI, DI
+ 0017  89 2E 000C R		 	mov	oldBP, BP
+ 001B  89 26 000E R			mov	oldSP, SP
+
+					; move the flags into memory by moving them into AX first
+ 001F  50				push	AX
+ 0020  9C				pushf
+
+ 0021  9C				pushf
+ 0022  58				pop	AX
+ 0023  A3 0010 R			mov	oldFL, AX
+ 0026  9D				popf
+ 0027  58			 	pop	AX
+ 0028  C3			 	ret
+ 0029				SaveMachineState ENDP
+
+				; this is a helper function that writes a single char
+				; to the screen
+ 0029				PrintChar PROC
+					; assume that the character to write has already
+					; been placed in DL
+ 0029  50				push	AX
+
+ 002A  B4 02				mov	AH, 02h	; this is the DOS code to write a char
+ 002C  CD 21				int	21h	; call DOS to write the character
+
+ 002E  58				pop	AX
+ 002F  C3				ret
+ 0030				PrintChar ENDP
+
+				; this writes the single hex digit in DL to the screen
+ 0030				PrintHexDigit PROC
+ 0030  52				push	DX
+ 0031  9C				pushf
+
+					; get just the last digit in DL
+ 0032  80 E2 0F				AND	DL, 00001111b
+
+					; find out which set of digits to print
+ 0035  80 FA 0A				cmp	DL, 0Ah
+ 0038  7C 02				jl	decimal
+ 003A  EB 05				jmp	hex
+
+ 003C				decimal:
+ 003C  80 C2 30				add	DL, 48
+ 003F  EB 03				jmp	print
+
+ 0041				hex:
+ 0041  80 C2 37				add	DL, 55
+
+ 0044				print:
+ 0044  E8 FFE2				call PrintChar
+
+ 0047  9D				popf
+ 0048  5A				pop DX
+ 0049  C3				ret
+ 004A				PrintHexDigit ENDP
+
+				; write the whole byte in DL to the screen
+ 004A				PrintHexByte PROC
+ 004A  52				push	DX
+ 004B  9C				pushf
+
+ 004C  52				push	DX
+ 004D  51				push	CX
+
+					; set CL to use in the shift instruction
+ 004E  B1 04				mov	CL, 4
+
+					; move the higher 4 bits into the lower 4 bits to get them to print
+ 0050  D3 EA				SHR	DX, CL
+
+ 0052  E8 FFDB				call PrintHexDigit
+
+ 0055  59				pop	CX
+ 0056  5A				pop	DX
+
+ 0057  E8 FFD6				call PrintHexDigit
+
+ 005A  9D				popf
+ 005B  5A				pop	DX
+ 005C  C3				ret
+ 005D				PrintHexByte ENDP
+
+				; write a string of hex digits without spaces starting from the address in BX
+				; and printing a number of values equal to the number stored in CX
+ 005D				PrintHexString PROC
+ 005D  53				push	BX
+ 005E  51				push	CX
+ 005F  52				push	DX
+ 0060  9C				pushf
+
+ 0061				compare:
+ 0061  83 F9 00				cmp	CX, 0
+ 0064  74 09				je	done
+
+ 0066				start:
+ 0066  8A 17				mov	DL, [BX]
+
+ 0068  E8 FFC5				call PrintHexDigit
+
+ 006B  43				inc	BX
+ 006C  49				dec	CX
+ 006D  EB F2				jmp	compare
+
+ 006F				done:
+ 006F  9D				popf
+ 0070  5A				pop	DX
+ 0071  59				pop	CX
+ 0072  5B				pop	BX
+ 0073  C3				ret
+ 0074				PrintHexString ENDP
+
+				; this function writes a string starting from the OFFSET
+				; stored in DX
+ 0074				PrintString PROC
+ 0074  53				push	BX
+ 0075  52				push	DX
+ 0076  9C				pushf
+
+					; put the address into BX
+ 0077  8B DA				mov	BX, DX
+
+ 0079				print:
+					; put the next char in DL and print it
+ 0079  8A 17				mov	DL, [BX]
+ 007B  80 FA 00				cmp	DL, 0
+ 007E  74 06				je	done
+ 0080  E8 FFA6				call	PrintChar
+ 0083  43				inc	BX	; increment BX to the next position
+ 0084  EB F3				jmp	print
+
+ 0086				done:
+ 0086  9D				popf
+ 0087  5A				pop	DX
+ 0088  5B				pop	BX
+ 0089  C3				ret
+ 008A				PrintString ENDP
+
+				; this function writes AX to the screen as a hex word
+ 008A				PrintHexWord PROC
+ 008A  52				push	DX
+
+ 008B  8A D4				mov	DL, AH
+ 008D  E8 FFBA				call	PrintHexByte
+
+ 0090  8A D0				mov	DL, AL
+ 0092  E8 FFB5				call	PrintHexByte
+
+ 0095  5A				pop	DX
+ 0096  C3				ret
+ 0097				PrintHexWord ENDP
+
+ 0097				CompAX PROC
+ 0097  9C				pushf
+
+ 0098  3B 06 0000 R			cmp	AX, oldAX
+ 009C  74 2F				je	done
+
+					; this only runs if AX has changed
+ 009E  52				push	DX
+
+ 009F  B2 41				mov	DL, 'A'
+ 00A1  88 16 0020 R			mov	RegName, DL
+
+ 00A5  B2 58				mov	DL, 'X'
+ 00A7  88 16 0021 R			mov	[RegName + 1], DL
+
+ 00AB  BA 0017 R			mov	DX, OFFSET Error
+ 00AE  E8 FFC3				call	PrintString
+ 00B1  5A				pop	DX
+
+ 00B2  50				push	AX
+ 00B3  A1 0000 R			mov	AX, oldAX
+ 00B6  E8 FFD1				call	PrintHexWord
+ 00B9  58				pop	AX
+
+ 00BA  52				push	DX
+ 00BB  BA 0044 R			mov	DX, OFFSET ErrorC
+ 00BE  E8 FFB3				call	PrintString
+ 00C1  5A				pop	DX
+
+ 00C2  E8 FFC5				call	PrintHexWord
+
+ 00C5  52				push	DX
+ 00C6  BA 0052 R			mov	DX, OFFSET Fin
+ 00C9  E8 FFA8				call	PrintString
+ 00CC  5A				pop	DX
+
+ 00CD				done:
+ 00CD  9D				popf
+ 00CE  C3				ret
+ 00CF				CompAX ENDP
+
+ 00CF				CompBX PROC
+ 00CF  9C				pushf
+
+ 00D0  3B 1E 0002 R			cmp	BX, oldBX
+ 00D4  74 33				je	done
+
+					; this only runs if AX has changed
+ 00D6  52				push	DX
+
+ 00D7  B2 42				mov	DL, 'B'
+ 00D9  88 16 0020 R			mov	RegName, DL
+
+ 00DD  B2 58				mov	DL, 'X'
+ 00DF  88 16 0021 R			mov	[RegName + 1], DL
+
+ 00E3  BA 0017 R			mov	DX, OFFSET Error
+ 00E6  E8 FF8B				call	PrintString
+ 00E9  5A				pop	DX
+
+ 00EA  50				push	AX
+ 00EB  A1 0002 R			mov	AX, oldBX
+ 00EE  E8 FF99				call	PrintHexWord
+ 00F1  58				pop	AX
+
+ 00F2  52				push	DX
+ 00F3  BA 0044 R			mov	DX, OFFSET ErrorC
+ 00F6  E8 FF7B				call	PrintString
+ 00F9  5A				pop	DX
+
+ 00FA  50				push	AX
+ 00FB  8B C3				mov	AX, BX
+ 00FD  E8 FF8A				call	PrintHexWord
+ 0100  58				pop	AX
+
+ 0101  52				push	DX
+ 0102  BA 0052 R			mov	DX, OFFSET Fin
+ 0105  E8 FF6C				call	PrintString
+ 0108  5A				pop	DX
+
+ 0109				done:
+ 0109  9D				popf
+ 010A  C3				ret
+ 010B				CompBX ENDP
+
+ 010B				CompCX PROC
+ 010B  9C				pushf
+
+ 010C  3B 0E 0004 R			cmp	CX, oldCX
+ 0110  74 33				je	done
+
+					; this only runs if AX has changed
+ 0112  52				push	DX
+
+ 0113  B2 43				mov	DL, 'C'
+ 0115  88 16 0020 R			mov	RegName, DL
+
+ 0119  B2 58				mov	DL, 'X'
+ 011B  88 16 0021 R			mov	[RegName + 1], DL
+
+ 011F  BA 0017 R			mov	DX, OFFSET Error
+ 0122  E8 FF4F				call	PrintString
+ 0125  5A				pop	DX
+
+ 0126  50				push	AX
+ 0127  A1 0004 R			mov	AX, oldCX
+ 012A  E8 FF5D				call	PrintHexWord
+ 012D  58				pop	AX
+
+ 012E  52				push	DX
+ 012F  BA 0044 R			mov	DX, OFFSET ErrorC
+ 0132  E8 FF3F				call	PrintString
+ 0135  5A				pop	DX
+
+ 0136  50				push	AX
+ 0137  8B C1				mov	AX, CX
+ 0139  E8 FF4E				call	PrintHexWord
+ 013C  58				pop	AX
+
+ 013D  52				push	DX
+ 013E  BA 0052 R			mov	DX, OFFSET Fin
+ 0141  E8 FF30				call	PrintString
+ 0144  5A				pop	DX
+
+ 0145				done:
+ 0145  9D				popf
+ 0146  C3				ret
+ 0147				CompCX ENDP
+
+ 0147				CompDX PROC
+ 0147  9C				pushf
+
+ 0148  3B 16 0006 R			cmp	DX, oldDX
+ 014C  74 33				je	done
+
+					; this only runs if AX has changed
+ 014E  52				push	DX
+
+ 014F  B2 44				mov	DL, 'D'
+ 0151  88 16 0020 R			mov	RegName, DL
+
+ 0155  B2 58				mov	DL, 'X'
+ 0157  88 16 0021 R			mov	[RegName + 1], DL
+
+ 015B  BA 0017 R			mov	DX, OFFSET Error
+ 015E  E8 FF13				call	PrintString
+ 0161  5A				pop	DX
+
+ 0162  50				push	AX
+ 0163  A1 0006 R			mov	AX, oldDX
+ 0166  E8 FF21				call	PrintHexWord
+ 0169  58				pop	AX
+
+ 016A  52				push	DX
+ 016B  BA 0044 R			mov	DX, OFFSET ErrorC
+ 016E  E8 FF03				call	PrintString
+ 0171  5A				pop	DX
+
+ 0172  50				push	AX
+ 0173  8B C2				mov	AX, DX
+ 0175  E8 FF12				call	PrintHexWord
+ 0178  58				pop	AX
+
+ 0179  52				push	DX
+ 017A  BA 0052 R			mov	DX, OFFSET Fin
+ 017D  E8 FEF4				call	PrintString
+ 0180  5A				pop	DX
+
+ 0181				done:
+ 0181  9D				popf
+ 0182  C3				ret
+ 0183				CompDX ENDP
+
+ 0183				CompSI PROC
+ 0183  9C				pushf
+
+ 0184  3B 36 0008 R			cmp	SI, oldSI
+ 0188  74 33				je	done
+
+					; this only runs if AX has changed
+ 018A  52				push	DX
+
+ 018B  B2 53				mov	DL, 'S'
+ 018D  88 16 0020 R			mov	RegName, DL
+
+ 0191  B2 49				mov	DL, 'I'
+ 0193  88 16 0021 R			mov	[RegName + 1], DL
+
+ 0197  BA 0017 R			mov	DX, OFFSET Error
+ 019A  E8 FED7				call	PrintString
+ 019D  5A				pop	DX
+
+ 019E  50				push	AX
+ 019F  A1 0008 R			mov	AX, oldSI
+ 01A2  E8 FEE5				call	PrintHexWord
+ 01A5  58				pop	AX
+
+ 01A6  52				push	DX
+ 01A7  BA 0044 R			mov	DX, OFFSET ErrorC
+ 01AA  E8 FEC7				call	PrintString
+ 01AD  5A				pop	DX
+
+ 01AE  50				push	AX
+ 01AF  8B C6				mov	AX, SI
+ 01B1  E8 FED6				call	PrintHexWord
+ 01B4  58				pop	AX
+
+ 01B5  52				push	DX
+ 01B6  BA 0052 R			mov	DX, OFFSET Fin
+ 01B9  E8 FEB8				call	PrintString
+ 01BC  5A				pop	DX
+
+ 01BD				done:
+ 01BD  9D				popf
+ 01BE  C3				ret
+ 01BF				CompSI ENDP
+
+ 01BF				CompDI PROC
+ 01BF  9C				pushf
+
+ 01C0  3B 3E 000A R			cmp	DI, oldDI
+ 01C4  74 33				je	done
+
+					; this only runs if AX has changed
+ 01C6  52				push	DX
+
+ 01C7  B2 44				mov	DL, 'D'
+ 01C9  88 16 0020 R			mov	RegName, DL
+
+ 01CD  B2 49				mov	DL, 'I'
+ 01CF  88 16 0021 R			mov	[RegName + 1], DL
+
+ 01D3  BA 0017 R			mov	DX, OFFSET Error
+ 01D6  E8 FE9B				call	PrintString
+ 01D9  5A				pop	DX
+
+ 01DA  50				push	AX
+ 01DB  A1 000A R			mov	AX, oldDI
+ 01DE  E8 FEA9				call	PrintHexWord
+ 01E1  58				pop	AX
+
+ 01E2  52				push	DX
+ 01E3  BA 0044 R			mov	DX, OFFSET ErrorC
+ 01E6  E8 FE8B				call	PrintString
+ 01E9  5A				pop	DX
+
+ 01EA  50				push	AX
+ 01EB  8B C7				mov	AX, DI
+ 01ED  E8 FE9A				call	PrintHexWord
+ 01F0  58				pop	AX
+
+ 01F1  52				push	DX
+ 01F2  BA 0052 R			mov	DX, OFFSET Fin
+ 01F5  E8 FE7C				call	PrintString
+ 01F8  5A				pop	DX
+
+ 01F9				done:
+ 01F9  9D				popf
+ 01FA  C3				ret
+ 01FB				CompDI ENDP
+
+ 01FB				CompBP PROC
+ 01FB  9C				pushf
+
+ 01FC  3B 2E 000C R			cmp	BP, oldBP
+ 0200  74 33				je	done
+
+					; this only runs if AX has changed
+ 0202  52				push	DX
+
+ 0203  B2 42				mov	DL, 'B'
+ 0205  88 16 0020 R			mov	RegName, DL
+
+ 0209  B2 50				mov	DL, 'P'
+ 020B  88 16 0021 R			mov	[RegName + 1], DL
+
+ 020F  BA 0017 R			mov	DX, OFFSET Error
+ 0212  E8 FE5F				call	PrintString
+ 0215  5A				pop	DX
+
+ 0216  50				push	AX
+ 0217  A1 000C R			mov	AX, oldBP
+ 021A  E8 FE6D				call	PrintHexWord
+ 021D  58				pop	AX
+
+ 021E  52				push	DX
+ 021F  BA 0044 R			mov	DX, OFFSET ErrorC
+ 0222  E8 FE4F				call	PrintString
+ 0225  5A				pop	DX
+
+ 0226  50				push	AX
+ 0227  8B C5				mov	AX, BP
+ 0229  E8 FE5E				call	PrintHexWord
+ 022C  58				pop	AX
+
+ 022D  52				push	DX
+ 022E  BA 0052 R			mov	DX, OFFSET Fin
+ 0231  E8 FE40				call	PrintString
+ 0234  5A				pop	DX
+
+ 0235				done:
+ 0235  9D				popf
+ 0236  C3				ret
+ 0237				CompBP ENDP
+
+				; THIS NEEDS MORE WORK
+				; Stack after pushes
+				; +----------+
+				; |    BP    | <-- BP, SP
+				; +----------+
+				; |    FL    | <-- BP + 2
+				; +----------+
+				; |    RA    | <-- BP + 4
+				; +----------+
+				; |    FN    | <-- BP + 6
+				; +----------+
+				; |          |
+ 0237				CompSP PROC
+ 0237  9C				pushf
+ 0238  55				push	BP
+
+ 0239  8B EC				mov	BP, SP
+ 023B  83 C5 08				add	BP, 8
+
+ 023E  3B 2E 000E R			cmp	BP, oldSP
+ 0242  74 33				je	done
+
+					; this only runs if SP has changed
+ 0244  52				push	DX
+
+ 0245  B2 53				mov	DL, 'S'
+ 0247  88 16 0020 R			mov	RegName, DL
+
+ 024B  B2 50				mov	DL, 'P'
+ 024D  88 16 0021 R			mov	[RegName + 1], DL
+
+ 0251  BA 0017 R			mov	DX, OFFSET Error
+ 0254  E8 FE1D				call	PrintString
+ 0257  5A				pop	DX
+
+ 0258  50				push	AX
+ 0259  A1 000E R			mov	AX, oldSP
+ 025C  E8 FE2B				call	PrintHexWord
+ 025F  58				pop	AX
+
+ 0260  52				push	DX
+ 0261  BA 0044 R			mov	DX, OFFSET ErrorC
+ 0264  E8 FE0D				call	PrintString
+ 0267  5A				pop	DX
+
+ 0268  50				push	AX
+ 0269  8B C5				mov	AX, BP
+ 026B  E8 FE1C				call	PrintHexWord
+ 026E  58				pop	AX
+
+ 026F  52				push	DX
+ 0270  BA 0052 R			mov	DX, OFFSET Fin
+ 0273  E8 FDFE				call	PrintString
+ 0276  5A				pop	DX
+
+ 0277				done:
+ 0277  5D				pop	BP
+ 0278  9D				popf
+ 0279  C3				ret
+ 027A				CompSP ENDP
+
+				; ==============================================================================
+				;                  THIS IS THE START OF THE FLAG COMPARISONS
+				; ==============================================================================
+
+				; THIS WILL ONLY CHECK ONE FLAG
+ 027A				CompOF PROC
+ 027A  50				push	AX
+ 027B  53				push	BX
+ 027C  9C				pushf
+
+					; FLAGS REGISTER DIAGRAM
+					; +15+14+13+12+11+10+09+08+ +07+06+05+04+03+02+01+00+
+					; +--+--+--+--+--+--+--+--+ +--+--+--+--+--+--+--+--+
+					; |  |  |  |  |OF|DF|IF|TF| |SF|ZF|  |AC|  |PF|  |CY|
+					; +--+--+--+--+--+--+--+--+ +--+--+--+--+--+--+--+--+
+
+					; put the flags into AX
+					; AND with 0 eveyrwhere except the flag we care about and compare
+					; the old value to the new value
+ 027D  9C				pushf
+ 027E  58				pop	AX
+
+ 027F  8B 1E 0010 R			mov	BX, oldFL
+
+					; check one flag
+ 0283  50				push	AX
+
+ 0284  25 0800				AND	AX, 0800h
+ 0287  81 E3 0800			AND	BX, 0800h
+
+ 028B  3B C3				cmp	AX, BX
+ 028D  75 05				jne	change
+
+ 028F				done:
+ 028F  58				pop	AX
+
+ 0290  9D				popf
+ 0291  5B				pop	BX
+ 0292  58				pop	AX
+ 0293  C3				ret
+
+ 0294				change:
+ 0294  3B C3				cmp	AX, BX
+ 0296  72 28				jb	lowered
+
+ 0298				raised:
+ 0298  52				push	DX
+ 0299  B2 4F				mov	DL, 'O'
+ 029B  88 16 0055 R			mov	FlagN, DL
+
+ 029F  BA 0055 R			mov	DX, OFFSET FlagN
+ 02A2  E8 FDCF				call	PrintString
+
+ 02A5  BA 0090 R			mov	DX, OFFSET Clear
+ 02A8  E8 FDC9				call	PrintString
+
+ 02AB  BA 007B R			mov	DX, OFFSET FlagC
+ 02AE  E8 FDC3				call	PrintString
+
+ 02B1  BA 008C R			mov	DX, OFFSET Set
+ 02B4  E8 FDBD				call	PrintString
+
+ 02B7  BA 0089 R			mov	DX, OFFSET FlagFin
+ 02BA  E8 FDB7				call	PrintString
+
+ 02BD  5A				pop	DX
+
+ 02BE  EB CF				jmp	done
+
+ 02C0				lowered:
+ 02C0  52				push	DX
+ 02C1  B2 4F				mov	DL, 'O'
+ 02C3  88 16 0055 R			mov	FlagN, DL
+
+ 02C7  BA 0055 R			mov	DX, OFFSET FlagN
+ 02CA  E8 FDA7				call	PrintString
+
+ 02CD  BA 008C R			mov	DX, OFFSET Set
+ 02D0  E8 FDA1				call	PrintString
+
+ 02D3  BA 007B R			mov	DX, OFFSET FlagC
+ 02D6  E8 FD9B				call	PrintString
+
+ 02D9  BA 0090 R			mov	DX, OFFSET Clear
+ 02DC  E8 FD95				call	PrintString
+
+ 02DF  BA 0089 R			mov	DX, OFFSET FlagFin
+ 02E2  E8 FD8F				call	PrintString
+
+ 02E5  5A				pop	DX
+
+ 02E6  EB A7				jmp	done
+
+ 02E8				CompOF ENDP
+
+				; THIS WILL ONLY CHECK ONE FLAG
+ 02E8				CompDF PROC
+ 02E8  50				push	AX
+ 02E9  53				push	BX
+ 02EA  9C				pushf
+
+					; FLAGS REGISTER DIAGRAM
+					; +15+14+13+12+11+10+09+08+ +07+06+05+04+03+02+01+00+
+					; +--+--+--+--+--+--+--+--+ +--+--+--+--+--+--+--+--+
+					; |  |  |  |  |OF|DF|IF|TF| |SF|ZF|  |AC|  |PF|  |CY|
+					; +--+--+--+--+--+--+--+--+ +--+--+--+--+--+--+--+--+
+
+					; put the flags into AX
+					; AND with 0 eveyrwhere except the flag we care about and compare
+					; the old value to the new value
+ 02EB  9C				pushf
+ 02EC  58				pop	AX
+
+ 02ED  8B 1E 0010 R			mov	BX, oldFL
+
+					; check one flag
+ 02F1  50				push	AX
+
+ 02F2  25 0400				AND	AX, 0400h
+ 02F5  81 E3 0400			AND	BX, 0400h
+
+ 02F9  3B C3				cmp	AX, BX
+ 02FB  75 05				jne	change
+
+ 02FD				done:
+ 02FD  58				pop	AX
+
+ 02FE  9D				popf
+ 02FF  5B				pop	BX
+ 0300  58				pop	AX
+ 0301  C3				ret
+
+ 0302				change:
+ 0302  3B C3				cmp	AX, BX
+ 0304  72 28				jb	lowered
+
+ 0306				raised:
+ 0306  52				push	DX
+ 0307  B2 44				mov	DL, 'D'
+ 0309  88 16 0055 R			mov	FlagN, DL
+
+ 030D  BA 0055 R			mov	DX, OFFSET FlagN
+ 0310  E8 FD61				call	PrintString
+
+ 0313  BA 0090 R			mov	DX, OFFSET	Clear
+ 0316  E8 FD5B				call	PrintString
+
+ 0319  BA 007B R			mov	DX, OFFSET FlagC
+ 031C  E8 FD55				call	PrintString
+
+ 031F  BA 008C R			mov	DX, OFFSET Set
+ 0322  E8 FD4F				call	PrintString
+
+ 0325  BA 0089 R			mov	DX, OFFSET FlagFin
+ 0328  E8 FD49				call	PrintString
+
+ 032B  5A				pop	DX
+
+ 032C  EB CF				jmp	done
+
+ 032E				lowered:
+ 032E  52				push	DX
+ 032F  B2 44				mov	DL, 'D'
+ 0331  88 16 0055 R			mov	FlagN, DL
+
+ 0335  BA 0055 R			mov	DX, OFFSET FlagN
+ 0338  E8 FD39				call	PrintString
+
+ 033B  BA 008C R			mov	DX, OFFSET Set
+ 033E  E8 FD33				call	PrintString
+
+ 0341  BA 007B R			mov	DX, OFFSET FlagC
+ 0344  E8 FD2D				call	PrintString
+
+ 0347  BA 0090 R			mov	DX, OFFSET Clear
+ 034A  E8 FD27				call	PrintString
+
+ 034D  BA 0089 R			mov	DX, OFFSET FlagFin
+ 0350  E8 FD21				call	PrintString
+
+ 0353  5A				pop	DX
+
+ 0354  EB A7				jmp	done
+
+ 0356				CompDF ENDP
+
+				; THIS WILL ONLY CHECK ONE FLAG
+ 0356				CompIF PROC
+ 0356  50				push	AX
+ 0357  53				push	BX
+ 0358  9C				pushf
+
+					; FLAGS REGISTER DIAGRAM
+					; +15+14+13+12+11+10+09+08+ +07+06+05+04+03+02+01+00+
+					; +--+--+--+--+--+--+--+--+ +--+--+--+--+--+--+--+--+
+					; |  |  |  |  |OF|DF|IF|TF| |SF|ZF|  |AC|  |PF|  |CY|
+					; +--+--+--+--+--+--+--+--+ +--+--+--+--+--+--+--+--+
+
+					; put the flags into AX
+					; AND with 0 eveyrwhere except the flag we care about and compare
+					; the old value to the new value
+ 0359  9C				pushf
+ 035A  58				pop	AX
+
+ 035B  8B 1E 0010 R			mov	BX, oldFL
+
+					; check one flag
+ 035F  50				push	AX
+
+ 0360  25 0200				AND	AX, 0200h
+ 0363  81 E3 0200			AND	BX, 0200h
+
+ 0367  3B C3				cmp	AX, BX
+ 0369  75 05				jne	change
+
+ 036B				done:
+ 036B  58				pop	AX
+
+ 036C  9D				popf
+ 036D  5B				pop	BX
+ 036E  58				pop	AX
+ 036F  C3				ret
+
+ 0370				change:
+ 0370  3B C3				cmp	AX, BX
+ 0372  72 28				jb	lowered
+
+ 0374				raised:
+ 0374  52				push	DX
+ 0375  B2 49				mov	DL, 'I'
+ 0377  88 16 0055 R			mov	FlagN, DL
+
+ 037B  BA 0055 R			mov	DX, OFFSET FlagN
+ 037E  E8 FCF3				call	PrintString
+
+ 0381  BA 0090 R			mov	DX, OFFSET Clear
+ 0384  E8 FCED				call	PrintString
+
+ 0387  BA 007B R			mov	DX, OFFSET FlagC
+ 038A  E8 FCE7				call	PrintString
+
+ 038D  BA 008C R			mov	DX, OFFSET Set
+ 0390  E8 FCE1				call	PrintString
+
+ 0393  BA 0089 R			mov	DX, OFFSET FlagFin
+ 0396  E8 FCDB				call	PrintString
+
+ 0399  5A				pop	DX
+
+ 039A  EB CF				jmp	done
+
+ 039C				lowered:
+ 039C  52				push	DX
+ 039D  B2 49				mov	DL, 'I'
+ 039F  88 16 0055 R			mov	FlagN, DL
+
+ 03A3  BA 0055 R			mov	DX, OFFSET FlagN
+ 03A6  E8 FCCB				call	PrintString
+
+ 03A9  BA 008C R			mov	DX, OFFSET Set
+ 03AC  E8 FCC5				call	PrintString
+
+ 03AF  BA 007B R			mov	DX, OFFSET FlagC
+ 03B2  E8 FCBF				call	PrintString
+
+ 03B5  BA 0090 R			mov	DX, OFFSET Clear
+ 03B8  E8 FCB9				call	PrintString
+
+ 03BB  BA 0089 R			mov	DX, OFFSET FlagFin
+ 03BE  E8 FCB3				call	PrintString
+
+ 03C1  5A				pop	DX
+
+ 03C2  EB A7				jmp	done
+
+ 03C4				CompIF ENDP
+
+				; THIS WILL ONLY CHECK ONE FLAG
+ 03C4				CompTF PROC
+ 03C4  50				push	AX
+ 03C5  53				push	BX
+ 03C6  9C				pushf
+
+					; FLAGS REGISTER DIAGRAM
+					; +15+14+13+12+11+10+09+08+ +07+06+05+04+03+02+01+00+
+					; +--+--+--+--+--+--+--+--+ +--+--+--+--+--+--+--+--+
+					; |  |  |  |  |OF|DF|IF|TF| |SF|ZF|  |AC|  |PF|  |CY|
+					; +--+--+--+--+--+--+--+--+ +--+--+--+--+--+--+--+--+
+
+					; put the flags into AX
+					; AND with 0 eveyrwhere except the flag we care about and compare
+					; the old value to the new value
+ 03C7  9C				pushf
+ 03C8  58				pop	AX
+
+ 03C9  8B 1E 0010 R			mov	BX, oldFL
+
+					; check one flag
+ 03CD  50				push	AX
+
+ 03CE  25 0100				AND	AX, 0100h
+ 03D1  81 E3 0100			AND	BX, 0100h
+
+ 03D5  3B C3				cmp	AX, BX
+ 03D7  75 05				jne	change
+
+ 03D9				done:
+ 03D9  58				pop	AX
+
+ 03DA  9D				popf
+ 03DB  5B				pop	BX
+ 03DC  58				pop	AX
+ 03DD  C3				ret
+
+ 03DE				change:
+ 03DE  3B C3				cmp	AX, BX
+ 03E0  72 28				jb	lowered
+
+ 03E2				raised:
+ 03E2  52				push	DX
+ 03E3  B2 54				mov	DL, 'T'
+ 03E5  88 16 0055 R			mov	FlagN, DL
+
+ 03E9  BA 0055 R			mov	DX, OFFSET FlagN
+ 03EC  E8 FC85				call	PrintString
+
+ 03EF  BA 0090 R			mov	DX, OFFSET Clear
+ 03F2  E8 FC7F				call	PrintString
+
+ 03F5  BA 007B R			mov	DX, OFFSET FlagC
+ 03F8  E8 FC79				call	PrintString
+
+ 03FB  BA 008C R			mov	DX, OFFSET Set
+ 03FE  E8 FC73				call	PrintString
+
+ 0401  BA 0089 R			mov	DX, OFFSET FlagFin
+ 0404  E8 FC6D				call	PrintString
+
+ 0407  5A				pop	DX
+
+ 0408  EB CF				jmp	done
+
+ 040A				lowered:
+ 040A  52				push	DX
+ 040B  B2 54				mov	DL, 'T'
+ 040D  88 16 0055 R			mov	FlagN, DL
+
+ 0411  BA 0055 R			mov	DX, OFFSET FlagN
+ 0414  E8 FC5D				call	PrintString
+
+ 0417  BA 008C R			mov	DX, OFFSET Set
+ 041A  E8 FC57				call	PrintString
+
+ 041D  BA 007B R			mov	DX, OFFSET FlagC
+ 0420  E8 FC51				call	PrintString
+
+ 0423  BA 0090 R			mov	DX, OFFSET Clear
+ 0426  E8 FC4B				call	PrintString
+
+ 0429  BA 0089 R			mov	DX, OFFSET FlagFin
+ 042C  E8 FC45				call	PrintString
+
+ 042F  5A				pop	DX
+
+ 0430  EB A7				jmp	done
+
+ 0432				CompTF ENDP
+
+				; THIS WILL ONLY CHECK ONE FLAG
+ 0432				CompSF PROC
+ 0432  50				push	AX
+ 0433  53				push	BX
+ 0434  9C				pushf
+
+					; FLAGS REGISTER DIAGRAM
+					; +15+14+13+12+11+10+09+08+ +07+06+05+04+03+02+01+00+
+					; +--+--+--+--+--+--+--+--+ +--+--+--+--+--+--+--+--+
+					; |  |  |  |  |OF|DF|IF|TF| |SF|ZF|  |AC|  |PF|  |CY|
+					; +--+--+--+--+--+--+--+--+ +--+--+--+--+--+--+--+--+
+
+					; put the flags into AX
+					; AND with 0 eveyrwhere except the flag we care about and compare
+					; the old value to the new value
+ 0435  9C				pushf
+ 0436  58				pop	AX
+
+ 0437  8B 1E 0010 R			mov	BX, oldFL
+
+					; check one flag
+ 043B  50				push	AX
+
+ 043C  25 0080				AND	AX, 0080h
+ 043F  81 E3 0080			AND	BX, 0080h
+
+ 0443  3B C3				cmp	AX, BX
+ 0445  75 05				jne	change
+
+ 0447				done:
+ 0447  58				pop	AX
+
+ 0448  9D				popf
+ 0449  5B				pop	BX
+ 044A  58				pop	AX
+ 044B  C3				ret
+
+ 044C				change:
+ 044C  3B C3				cmp	AX, BX
+ 044E  72 28				jb	lowered
+
+ 0450				raised:
+ 0450  52				push	DX
+ 0451  B2 53				mov	DL, 'S'
+ 0453  88 16 0055 R			mov	FlagN, DL
+
+ 0457  BA 0055 R			mov	DX, OFFSET FlagN
+ 045A  E8 FC17				call	PrintString
+
+ 045D  BA 0090 R			mov	DX, OFFSET Clear
+ 0460  E8 FC11				call	PrintString
+
+ 0463  BA 007B R			mov	DX, OFFSET FlagC
+ 0466  E8 FC0B				call	PrintString
+
+ 0469  BA 008C R			mov	DX, OFFSET Set
+ 046C  E8 FC05				call	PrintString
+
+ 046F  BA 0089 R			mov	DX, OFFSET FlagFin
+ 0472  E8 FBFF				call	PrintString
+
+ 0475  5A				pop	DX
+
+ 0476  EB CF				jmp	done
+
+ 0478				lowered:
+ 0478  52				push	DX
+ 0479  B2 53				mov	DL, 'S'
+ 047B  88 16 0055 R			mov	FlagN, DL
+
+ 047F  BA 0055 R			mov	DX, OFFSET FlagN
+ 0482  E8 FBEF				call	PrintString
+
+ 0485  BA 008C R			mov	DX, OFFSET Set
+ 0488  E8 FBE9				call	PrintString
+
+ 048B  BA 007B R			mov	DX, OFFSET FlagC
+ 048E  E8 FBE3				call	PrintString
+
+ 0491  BA 0090 R			mov	DX, OFFSET Clear
+ 0494  E8 FBDD				call	PrintString
+
+ 0497  BA 0089 R			mov	DX, OFFSET FlagFin
+ 049A  E8 FBD7				call	PrintString
+
+ 049D  5A				pop	DX
+
+ 049E  EB A7				jmp	done
+
+ 04A0				CompSF ENDP
+
+				; THIS WILL ONLY CHECK ONE FLAG
+ 04A0				CompZF PROC
+ 04A0  50				push	AX
+ 04A1  53				push	BX
+ 04A2  9C				pushf
+
+					; FLAGS REGISTER DIAGRAM
+					; +15+14+13+12+11+10+09+08+ +07+06+05+04+03+02+01+00+
+					; +--+--+--+--+--+--+--+--+ +--+--+--+--+--+--+--+--+
+					; |  |  |  |  |OF|DF|IF|TF| |SF|ZF|  |AC|  |PF|  |CY|
+					; +--+--+--+--+--+--+--+--+ +--+--+--+--+--+--+--+--+
+
+					; put the flags into AX
+					; AND with 0 eveyrwhere except the flag we care about and compare
+					; the old value to the new value
+ 04A3  9C				pushf
+ 04A4  58				pop	AX
+
+ 04A5  8B 1E 0010 R			mov	BX, oldFL
+
+					; check one flag
+ 04A9  50				push	AX
+
+ 04AA  83 E0 40				AND	AX, 0040h
+ 04AD  83 E3 40				AND	BX, 0040h
+
+ 04B0  3B C3				cmp	AX, BX
+ 04B2  75 05				jne	change
+
+ 04B4				done:
+ 04B4  58				pop	AX
+
+ 04B5  9D				popf
+ 04B6  5B				pop	BX
+ 04B7  58				pop	AX
+ 04B8  C3				ret
+
+ 04B9				change:
+ 04B9  3B C3				cmp	AX, BX
+ 04BB  72 28				jb	lowered
+
+ 04BD				raised:
+ 04BD  52				push	DX
+ 04BE  B2 5A				mov	DL, 'Z'
+ 04C0  88 16 0055 R			mov	FlagN, DL
+
+ 04C4  BA 0055 R			mov	DX, OFFSET FlagN
+ 04C7  E8 FBAA				call	PrintString
+
+ 04CA  BA 0090 R			mov	DX, OFFSET Clear
+ 04CD  E8 FBA4				call	PrintString
+
+ 04D0  BA 007B R			mov	DX, OFFSET FlagC
+ 04D3  E8 FB9E				call	PrintString
+
+ 04D6  BA 008C R			mov	DX, OFFSET Set
+ 04D9  E8 FB98				call	PrintString
+
+ 04DC  BA 0089 R			mov	DX, OFFSET FlagFin
+ 04DF  E8 FB92				call	PrintString
+
+ 04E2  5A				pop	DX
+
+ 04E3  EB CF				jmp	done
+
+ 04E5				lowered:
+ 04E5  52				push	DX
+ 04E6  B2 5A				mov	DL, 'Z'
+ 04E8  88 16 0055 R			mov	FlagN, DL
+
+ 04EC  BA 0055 R			mov	DX, OFFSET FlagN
+ 04EF  E8 FB82				call	PrintString
+
+ 04F2  BA 008C R			mov	DX, OFFSET Set
+ 04F5  E8 FB7C				call	PrintString
+
+ 04F8  BA 007B R			mov	DX, OFFSET FlagC
+ 04FB  E8 FB76				call	PrintString
+
+ 04FE  BA 0090 R			mov	DX, OFFSET Clear
+ 0501  E8 FB70				call	PrintString
+
+ 0504  BA 0089 R			mov	DX, OFFSET FlagFin
+ 0507  E8 FB6A				call	PrintString
+
+ 050A  5A				pop	DX
+
+ 050B  EB A7				jmp	done
+
+ 050D				CompZF ENDP
+
+				; THIS WILL ONLY CHECK ONE FLAG
+ 050D				CompAF PROC
+ 050D  50				push	AX
+ 050E  53				push	BX
+ 050F  9C				pushf
+
+					; FLAGS REGISTER DIAGRAM
+					; +15+14+13+12+11+10+09+08+ +07+06+05+04+03+02+01+00+
+					; +--+--+--+--+--+--+--+--+ +--+--+--+--+--+--+--+--+
+					; |  |  |  |  |OF|DF|IF|TF| |SF|ZF|  |AC|  |PF|  |CY|
+					; +--+--+--+--+--+--+--+--+ +--+--+--+--+--+--+--+--+
+
+					; put the flags into AX
+					; AND with 0 eveyrwhere except the flag we care about and compare
+					; the old value to the new value
+ 0510  9C				pushf
+ 0511  58				pop	AX
+
+ 0512  8B 1E 0010 R			mov	BX, oldFL
+
+					; check one flag
+ 0516  50				push	AX
+
+ 0517  83 E0 10				AND	AX, 0010h
+ 051A  83 E3 10				AND	BX, 0010h
+
+ 051D  3B C3				cmp	AX, BX
+ 051F  75 05				jne	change
+
+ 0521				done:
+ 0521  58				pop	AX
+
+ 0522  9D				popf
+ 0523  5B				pop	BX
+ 0524  58				pop	AX
+ 0525  C3				ret
+
+ 0526				change:
+ 0526  3B C3				cmp	AX, BX
+ 0528  72 28				jb	lowered
+
+ 052A				raised:
+ 052A  52				push	DX
+ 052B  B2 41				mov	DL, 'A'
+ 052D  88 16 0055 R			mov	FlagN, DL
+
+ 0531  BA 0055 R			mov	DX, OFFSET FlagN
+ 0534  E8 FB3D				call	PrintString
+
+ 0537  BA 0090 R			mov	DX, OFFSET Clear
+ 053A  E8 FB37				call	PrintString
+
+ 053D  BA 007B R			mov	DX, OFFSET FlagC
+ 0540  E8 FB31				call	PrintString
+
+ 0543  BA 008C R			mov	DX, OFFSET Set
+ 0546  E8 FB2B				call	PrintString
+
+ 0549  BA 0089 R			mov	DX, OFFSET FlagFin
+ 054C  E8 FB25				call	PrintString
+
+ 054F  5A				pop	DX
+
+ 0550  EB CF				jmp	done
+
+ 0552				lowered:
+ 0552  52				push	DX
+ 0553  B2 41				mov	DL, 'A'
+ 0555  88 16 0055 R			mov	FlagN, DL
+
+ 0559  BA 0055 R			mov	DX, OFFSET FlagN
+ 055C  E8 FB15				call	PrintString
+
+ 055F  BA 008C R	mov	DX, OFFSET Set
+ 0562  E8 FB0F				call	PrintString
+
+ 0565  BA 007B R			mov	DX, OFFSET FlagC
+ 0568  E8 FB09				call	PrintString
+
+ 056B  BA 0090 R			mov	DX, OFFSET Clear
+ 056E  E8 FB03				call	PrintString
+
+ 0571  BA 0089 R			mov	DX, OFFSET FlagFin
+ 0574  E8 FAFD				call	PrintString
+
+ 0577  5A				pop	DX
+
+ 0578  EB A7				jmp	done
+
+ 057A				CompAF ENDP
+
+				; THIS WILL ONLY CHECK ONE FLAG
+ 057A				CompPF PROC
+ 057A  50				push	AX
+ 057B  53				push	BX
+ 057C  9C				pushf
+
+					; FLAGS REGISTER DIAGRAM
+					; +15+14+13+12+11+10+09+08+ +07+06+05+04+03+02+01+00+
+					; +--+--+--+--+--+--+--+--+ +--+--+--+--+--+--+--+--+
+					; |  |  |  |  |OF|DF|IF|TF| |SF|ZF|  |AC|  |PF|  |CY|
+					; +--+--+--+--+--+--+--+--+ +--+--+--+--+--+--+--+--+
+
+					; put the flags into AX
+					; AND with 0 eveyrwhere except the flag we care about and compare
+					; the old value to the new value
+ 057D  9C				pushf
+ 057E  58				pop	AX
+
+ 057F  8B 1E 0010 R			mov	BX, oldFL
+
+					; check one flag
+ 0583  50				push	AX
+
+ 0584  83 E0 04				AND	AX, 0004h
+ 0587  83 E3 04				AND	BX, 0004h
+
+ 058A  3B C3				cmp	AX, BX
+ 058C  75 05				jne	change
+
+ 058E				done:
+ 058E  58				pop	AX
+
+ 058F  9D				popf
+ 0590  5B				pop	BX
+ 0591  58				pop	AX
+ 0592  C3				ret
+
+ 0593				change:
+ 0593  3B C3				cmp	AX, BX
+ 0595  72 28				jb	lowered
+
+ 0597				raised:
+ 0597  52				push	DX
+ 0598  B2 50				mov	DL, 'P'
+ 059A  88 16 0055 R			mov	FlagN, DL
+
+ 059E  BA 0055 R			mov	DX, OFFSET FlagN
+ 05A1  E8 FAD0				call	PrintString
+
+ 05A4  BA 0090 R			mov	DX, OFFSET Clear
+ 05A7  E8 FACA				call	PrintString
+
+ 05AA  BA 007B R			mov	DX, OFFSET FlagC
+ 05AD  E8 FAC4				call	PrintString
+
+ 05B0  BA 008C R			mov	DX, OFFSET Set
+ 05B3  E8 FABE				call	PrintString
+
+ 05B6  BA 0089 R			mov	DX, OFFSET FlagFin
+ 05B9  E8 FAB8				call	PrintString
+
+ 05BC  5A				pop	DX
+
+ 05BD  EB CF				jmp	done
+
+ 05BF				lowered:
+ 05BF  52				push	DX
+ 05C0  B2 50				mov	DL, 'P'
+ 05C2  88 16 0055 R			mov	FlagN, DL
+
+ 05C6  BA 0055 R			mov	DX, OFFSET FlagN
+ 05C9  E8 FAA8				call	PrintString
+
+ 05CC  BA 008C R			mov	DX, OFFSET Set
+ 05CF  E8 FAA2				call	PrintString
+
+ 05D2  BA 007B R			mov	DX, OFFSET FlagC
+ 05D5  E8 FA9C				call	PrintString
+
+ 05D8  BA 0090 R			mov	DX, OFFSET Clear
+ 05DB  E8 FA96				call	PrintString
+
+ 05DE  BA 0089 R			mov	DX, OFFSET FlagFin
+ 05E1  E8 FA90				call	PrintString
+
+ 05E4  5A				pop	DX
+
+ 05E5  EB A7				jmp	done
+
+ 05E7				CompPF ENDP
+
+				; THIS WILL ONLY CHECK ONE FLAG
+ 05E7				CompCF PROC
+ 05E7  50				push	AX
+ 05E8  53				push	BX
+ 05E9  9C				pushf
+
+					; FLAGS REGISTER DIAGRAM
+					; +15+14+13+12+11+10+09+08+ +07+06+05+04+03+02+01+00+
+					; +--+--+--+--+--+--+--+--+ +--+--+--+--+--+--+--+--+
+					; |  |  |  |  |OF|DF|IF|TF| |SF|ZF|  |AC|  |PF|  |CY|
+					; +--+--+--+--+--+--+--+--+ +--+--+--+--+--+--+--+--+
+
+					; put the flags into AX
+					; AND with 0 eveyrwhere except the flag we care about and compare
+					; the old value to the new value
+ 05EA  9C				pushf
+ 05EB  58				pop	AX
+
+ 05EC  8B 1E 0010 R			mov	BX, oldFL
+
+					; check one flag
+ 05F0  50				push	AX
+
+ 05F1  83 E0 01				AND	AX, 0001h
+ 05F4  83 E3 01				AND	BX, 0001h
+
+ 05F7  3B C3				cmp	AX, BX
+ 05F9  75 05				jne	change
+
+ 05FB				done:
+ 05FB  58				pop	AX
+
+ 05FC  9D				popf
+ 05FD  5B				pop	BX
+ 05FE  58				pop	AX
+ 05FF  C3				ret
+
+ 0600				change:
+ 0600  3B C3				cmp	AX, BX
+ 0602  72 28				jb	lowered
+
+ 0604				raised:
+ 0604  52				push	DX
+ 0605  B2 43				mov	DL, 'C'
+ 0607  88 16 0055 R			mov FlagN, DL
+
+ 060B  BA 0055 R			mov	DX, OFFSET FlagN
+ 060E  E8 FA63				call	PrintString
+
+ 0611  BA 0090 R			mov	DX, OFFSET Clear
+ 0614  E8 FA5D				call	PrintString
+
+ 0617  BA 007B R			mov	DX, OFFSET FlagC
+ 061A  E8 FA57				call	PrintString
+
+ 061D  BA 008C R			mov	DX, OFFSET Set
+ 0620  E8 FA51				call	PrintString
+
+ 0623  BA 0089 R			mov	DX, OFFSET FlagFin
+ 0626  E8 FA4B				call	PrintString
+
+ 0629  5A				pop	DX
+
+ 062A  EB CF				jmp	done
+
+ 062C				lowered:
+ 062C  52				push	DX
+ 062D  B2 43				mov	DL, 'C'
+ 062F  88 16 0055 R			mov	FlagN, DL
+
+ 0633  BA 0055 R			mov	DX, OFFSET FlagN
+ 0636  E8 FA3B				call	PrintString
+
+ 0639  BA 008C R			mov	DX, OFFSET Set
+ 063C  E8 FA35				call	PrintString
+
+ 063F  BA 007B R			mov	DX, OFFSET FlagC
+ 0642  E8 FA2F				call	PrintString
+
+ 0645  BA 0090 R			mov	DX, OFFSET Clear
+ 0648  E8 FA29				call	PrintString
+
+ 064B  BA 0089 R			mov	DX, OFFSET FlagFin
+ 064E  E8 FA23				call	PrintString
+
+ 0651  5A				pop	DX
+
+ 0652  EB A7				jmp	done
+
+ 0654				CompCF ENDP
+
+				; compare the current machine state to the one saved in memory and output the
+				; differences (if any)
+ 0654				CompareMachineState PROC
+ 0654  9C				pushf
+
+ 0655  E8 FA3F				call	CompAX
+ 0658  E8 FA74				call	CompBX
+ 065B  E8 FAAD				call	CompCX
+ 065E  E8 FAE6				call	CompDX
+ 0661  E8 FB1F				call	CompSI
+ 0664  E8 FB58				call	CompDI
+ 0667  E8 FB91				call	CompBP
+ 066A  E8 FBCA				call	CompSP
+
+					; FLAGS REGISTER DIAGRAM
+					; +15+14+13+12+11+10+09+08+ +07+06+05+04+03+02+01+00+
+					; +--+--+--+--+--+--+--+--+ +--+--+--+--+--+--+--+--+
+					; |  |  |  |  |OF|DF|IF|TF| |SF|ZF|  |AF|  |PF|  |CF|
+					; +--+--+--+--+--+--+--+--+ +--+--+--+--+--+--+--+--+
+
+ 066D  E8 FC0A				call	CompOF
+ 0670  E8 FC75				call	CompDF
+ 0673  E8 FCE0				call	CompIF
+ 0676  E8 FD4B				call	CompTF
+ 0679  E8 FDB6				call	CompSF
+ 067C  E8 FE21				call	CompZF
+ 067F  E8 FE8B				call	CompAF
+ 0682  E8 FEF5				call	CompPF
+ 0685  E8 FF5F				call	CompCF
+
+ 0688  9D				popf
+ 0689  C3			 	ret
+ 068A				CompareMachineState ENDP
+
+				; a recursive factorial function that takes a number in AX and returns the
+				; answer in AX
+ 068A				Fact PROC
+ 068A  53				push	BX
+ 068B  52				push	DX
+ 068C  9C				pushf
+
+ 068D  83 F8 02				cmp	AX, 2
+ 0690  72 10				jb	zero
+
+					; preserve the value of AX through the recursion
+ 0692  8B D8				mov	BX, AX
+
+					; prepare to recursively call the function
+ 0694  48				dec	AX
+
+					; resurcively call factorial
+ 0695  E8 FFF2				call	Fact
+
+					; save the value from the recursive definition
+ 0698  8B D0				mov	DX, AX
+
+					; restore the value of AX
+ 069A  8B C3				mov	AX, BX
+
+					; AX still has the original value
+ 069C  F7 E2				mul	DX
+
+ 069E				done:
+ 069E  9D				popf
+ 069F  5A				pop	DX
+ 06A0  5B				pop	BX
+ 06A1  C3				ret
+
+ 06A2				zero:
+ 06A2  B8 0001				mov	AX, 1
+ 06A5  EB F7				jmp	done
+
+ 06A7				Fact ENDP
+
+				; write the contents of memory starting from the address stored in BX and print
+				; a number of characters equal to the number in CX
+ 06A7				HexOut PROC
+ 06A7  53				push	BX
+ 06A8  51				push	CX
+ 06A9  52				push	DX
+ 06AA  9C				pushf
+
+ 06AB				compare:
+ 06AB  83 F9 00				cmp	CX, 0
+ 06AE  74 0F				je	done
+
+ 06B0				start:
+ 06B0  8A 17				mov	DL, [BX]
+
+ 06B2  E8 F995				call	PrintHexByte
+
+					; NOTE: PRINT A SPACE AFTER EACH BYTE
+ 06B5  BA 0020				mov	DX, SPACE
+ 06B8  E8 F96E				call	PrintChar
+
+ 06BB  43				inc	BX
+ 06BC  49				dec	CX
+ 06BD  EB EC				jmp	compare
+
+ 06BF				done:
+ 06BF  9D				popf
+ 06C0  5A				pop	DX
+ 06C1  59				pop	CX
+ 06C2  5B				pop	BX
+ 06C3  C3				ret
+ 06C4				HexOut ENDP
+
+				; this function prints the sign of AX then performs 2's complement if AX
+				; is holding a number less than 0
+ 06C4				PrintSign PROC
+ 06C4  52				push	DX
+ 06C5  9C				pushf
+
+ 06C6  83 F8 00				cmp	AX, 0
+ 06C9  7F 08				jg	done
+
+ 06CB  F7 D0				NOT	AX	; flip all the bits of AX and ...
+ 06CD  40				inc	AX	; ... add 1 to AX, thus completing 2's complement
+ 06CE  B2 2D				mov	DL, '-'	; this should be the ASCII value of '-'
+ 06D0  E8 F956				call	PrintChar	; print the negative sign
+
+ 06D3				done:
+ 06D3  9D				popf
+ 06D4  5A				pop	DX
+ 06D5  C3				ret
+ 06D6				PrintSign ENDP
+
+				; write the unsingned integer in AX to the screen, this cannot print 0
+ 06D6				PrintUInt PROC
+ 06D6  9C				pushf
+ 06D7  52				push	DX
+
+ 06D8  83 F8 00				cmp	AX, 0
+ 06DB  74 10				je	done
+
+					; get the remainder in DX
+ 06DD  53				push	BX
+ 06DE  BB 000A				mov	BX, 10
+ 06E1  BA 0000				mov	DX, 0
+ 06E4  F7 F3				div	BX
+ 06E6  5B				pop	BX
+
+					; resursively call this function to get all the other digits
+ 06E7  E8 FFEC				call	PrintUInt
+
+ 06EA  E8 F943				call PrintHexDigit
+
+ 06ED					done:
+ 06ED  5A				pop	DX
+ 06EE  9D				popf
+ 06EF  C3				ret
+ 06F0				PrintUInt ENDP
+
+				; print a signed integer stored in AX
+ 06F0				PrintInt PROC
+ 06F0  50				push	AX
+ 06F1  9C				pushf
+
+ 06F2  83 F8 00				cmp	AX, 0
+ 06F5  74 09				je	zero
+
+ 06F7  E8 FFCA				call	PrintSign
+ 06FA  E8 FFD9				call	PrintUInt
+
+ 06FD				done:
+ 06FD  9D				popf
+ 06FE  58				pop	AX
+ 06FF  C3				ret
+
+ 0700				zero:
+ 0700  52				push	DX
+ 0701  B2 30				mov	DL, '0'
+ 0703  E8 F923				call	PrintChar
+ 0706  5A				pop	DX
+ 0707  EB F4				jmp	done
+
+ 0709				PrintInt ENDP
+
+				END
+Microsoft (R) Macro Assembler Version 6.11		    02/17/19 15:42:11
+procs							     Symbols 2 - 1
+
+
+
+
+Segments and Groups:
+
+                N a m e                 Size     Length   Align   Combine Class
+
+DGROUP . . . . . . . . . . . . .	GROUP
+_DATA  . . . . . . . . . . . . .	16 Bit	 0096	  Word	  Public  'DATA'	
+STACK  . . . . . . . . . . . . .	16 Bit	 0200	  Para	  Stack	  'STACK'	 
+_TEXT  . . . . . . . . . . . . .	16 Bit	 0709	  Word	  Public  'CODE'	
+
+
+Procedures,  parameters and locals:
+
+                N a m e                 Type     Value    Attr
+
+CompAF . . . . . . . . . . . . .	P Near	 050D	  _TEXT	Length= 006D Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 0521	  _TEXT	
+  change . . . . . . . . . . . .	L Near	 0526	  _TEXT	
+  raised . . . . . . . . . . . .	L Near	 052A	  _TEXT	
+  lowered  . . . . . . . . . . .	L Near	 0552	  _TEXT	
+CompAX . . . . . . . . . . . . .	P Near	 0097	  _TEXT	Length= 0038 Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 00CD	  _TEXT	
+CompBP . . . . . . . . . . . . .	P Near	 01FB	  _TEXT	Length= 003C Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 0235	  _TEXT	
+CompBX . . . . . . . . . . . . .	P Near	 00CF	  _TEXT	Length= 003C Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 0109	  _TEXT	
+CompCF . . . . . . . . . . . . .	P Near	 05E7	  _TEXT	Length= 006D Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 05FB	  _TEXT	
+  change . . . . . . . . . . . .	L Near	 0600	  _TEXT	
+  raised . . . . . . . . . . . .	L Near	 0604	  _TEXT	
+  lowered  . . . . . . . . . . .	L Near	 062C	  _TEXT	
+CompCX . . . . . . . . . . . . .	P Near	 010B	  _TEXT	Length= 003C Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 0145	  _TEXT	
+CompDF . . . . . . . . . . . . .	P Near	 02E8	  _TEXT	Length= 006E Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 02FD	  _TEXT	
+  change . . . . . . . . . . . .	L Near	 0302	  _TEXT	
+  raised . . . . . . . . . . . .	L Near	 0306	  _TEXT	
+  lowered  . . . . . . . . . . .	L Near	 032E	  _TEXT	
+CompDI . . . . . . . . . . . . .	P Near	 01BF	  _TEXT	Length= 003C Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 01F9	  _TEXT	
+CompDX . . . . . . . . . . . . .	P Near	 0147	  _TEXT	Length= 003C Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 0181	  _TEXT	
+CompIF . . . . . . . . . . . . .	P Near	 0356	  _TEXT	Length= 006E Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 036B	  _TEXT	
+  change . . . . . . . . . . . .	L Near	 0370	  _TEXT	
+  raised . . . . . . . . . . . .	L Near	 0374	  _TEXT	
+  lowered  . . . . . . . . . . .	L Near	 039C	  _TEXT	
+CompOF . . . . . . . . . . . . .	P Near	 027A	  _TEXT	Length= 006E Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 028F	  _TEXT	
+  change . . . . . . . . . . . .	L Near	 0294	  _TEXT	
+  raised . . . . . . . . . . . .	L Near	 0298	  _TEXT	
+  lowered  . . . . . . . . . . .	L Near	 02C0	  _TEXT	
+CompPF . . . . . . . . . . . . .	P Near	 057A	  _TEXT	Length= 006D Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 058E	  _TEXT	
+  change . . . . . . . . . . . .	L Near	 0593	  _TEXT	
+  raised . . . . . . . . . . . .	L Near	 0597	  _TEXT	
+  lowered  . . . . . . . . . . .	L Near	 05BF	  _TEXT	
+CompSF . . . . . . . . . . . . .	P Near	 0432	  _TEXT	Length= 006E Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 0447	  _TEXT	
+  change . . . . . . . . . . . .	L Near	 044C	  _TEXT	
+  raised . . . . . . . . . . . .	L Near	 0450	  _TEXT	
+  lowered  . . . . . . . . . . .	L Near	 0478	  _TEXT	
+CompSI . . . . . . . . . . . . .	P Near	 0183	  _TEXT	Length= 003C Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 01BD	  _TEXT	
+CompSP . . . . . . . . . . . . .	P Near	 0237	  _TEXT	Length= 0043 Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 0277	  _TEXT	
+CompTF . . . . . . . . . . . . .	P Near	 03C4	  _TEXT	Length= 006E Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 03D9	  _TEXT	
+  change . . . . . . . . . . . .	L Near	 03DE	  _TEXT	
+  raised . . . . . . . . . . . .	L Near	 03E2	  _TEXT	
+  lowered  . . . . . . . . . . .	L Near	 040A	  _TEXT	
+CompZF . . . . . . . . . . . . .	P Near	 04A0	  _TEXT	Length= 006D Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 04B4	  _TEXT	
+  change . . . . . . . . . . . .	L Near	 04B9	  _TEXT	
+  raised . . . . . . . . . . . .	L Near	 04BD	  _TEXT	
+  lowered  . . . . . . . . . . .	L Near	 04E5	  _TEXT	
+CompareMachineState  . . . . . .	P Near	 0654	  _TEXT	Length= 0036 Public STDCALL
+DumpLongRegs . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+DumpMem  . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+DumpRegs . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+Fact . . . . . . . . . . . . . .	P Near	 068A	  _TEXT	Length= 001D Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 069E	  _TEXT	
+  zero . . . . . . . . . . . . .	L Near	 06A2	  _TEXT	
+HexOut . . . . . . . . . . . . .	P Near	 06A7	  _TEXT	Length= 001D Public STDCALL
+  compare  . . . . . . . . . . .	L Near	 06AB	  _TEXT	
+  start  . . . . . . . . . . . .	L Near	 06B0	  _TEXT	
+  done . . . . . . . . . . . . .	L Near	 06BF	  _TEXT	
+NewLine  . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+PrintChar  . . . . . . . . . . .	P Near	 0029	  _TEXT	Length= 0007 Public STDCALL
+PrintHexByte . . . . . . . . . .	P Near	 004A	  _TEXT	Length= 0013 Public STDCALL
+PrintHexDigit  . . . . . . . . .	P Near	 0030	  _TEXT	Length= 001A Public STDCALL
+  decimal  . . . . . . . . . . .	L Near	 003C	  _TEXT	
+  hex  . . . . . . . . . . . . .	L Near	 0041	  _TEXT	
+  print  . . . . . . . . . . . .	L Near	 0044	  _TEXT	
+PrintHexString . . . . . . . . .	P Near	 005D	  _TEXT	Length= 0017 Public STDCALL
+  compare  . . . . . . . . . . .	L Near	 0061	  _TEXT	
+  start  . . . . . . . . . . . .	L Near	 0066	  _TEXT	
+  done . . . . . . . . . . . . .	L Near	 006F	  _TEXT	
+PrintHexWord . . . . . . . . . .	P Near	 008A	  _TEXT	Length= 000D Public STDCALL
+PrintInt . . . . . . . . . . . .	P Near	 06F0	  _TEXT	Length= 0019 Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 06FD	  _TEXT	
+  zero . . . . . . . . . . . . .	L Near	 0700	  _TEXT	
+PrintSign  . . . . . . . . . . .	P Near	 06C4	  _TEXT	Length= 0012 Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 06D3	  _TEXT	
+PrintString  . . . . . . . . . .	P Near	 0074	  _TEXT	Length= 0016 Public STDCALL
+  print  . . . . . . . . . . . .	L Near	 0079	  _TEXT	
+  done . . . . . . . . . . . . .	L Near	 0086	  _TEXT	
+PrintUInt  . . . . . . . . . . .	P Near	 06D6	  _TEXT	Length= 001A Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 06ED	  _TEXT	
+PrintVersion . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadChar . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadHexByte  . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadHexDigit . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadHexWord  . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadInt  . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadLine . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+ReadUInt . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+SaveMachineState . . . . . . . .	P Near	 0000	  _TEXT	Length= 0029 Public STDCALL
+SkipToEOL  . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+TraceRegisterChanges . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+Version  . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteBit . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteChar  . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteHexByte . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteHexDigit  . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteHexLong . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteHexWord . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteInt . . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteString  . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+WriteUInt  . . . . . . . . . . .	P Near	 0000	  Length= 0000 External STDCALL
+
+
+Symbols:
+
+                N a m e                 Type     Value    Attr
+
+@CodeSize  . . . . . . . . . . .	Number	 0000h	 
+@DataSize  . . . . . . . . . . .	Number	 0000h	 
+@Interface . . . . . . . . . . .	Number	 0003h	 
+@Model . . . . . . . . . . . . .	Number	 0002h	 
+@code  . . . . . . . . . . . . .	Text   	 _TEXT
+@data  . . . . . . . . . . . . .	Text   	 DGROUP
+@fardata?  . . . . . . . . . . .	Text   	 FAR_BSS
+@fardata . . . . . . . . . . . .	Text   	 FAR_DATA
+@stack . . . . . . . . . . . . .	Text   	 DGROUP
+Clear  . . . . . . . . . . . . .	Byte	 0090	  _DATA	
+ErrorC . . . . . . . . . . . . .	Byte	 0044	  _DATA	
+Error  . . . . . . . . . . . . .	Byte	 0017	  _DATA	
+FLagFin  . . . . . . . . . . . .	Byte	 0089	  _DATA	
+Fin  . . . . . . . . . . . . . .	Byte	 0052	  _DATA	
+FlagC  . . . . . . . . . . . . .	Byte	 007B	  _DATA	
+FlagN  . . . . . . . . . . . . .	Byte	 0055	  _DATA	
+Hexy . . . . . . . . . . . . . .	Byte	 0012	  _DATA	
+RegName  . . . . . . . . . . . .	Byte	 0020	  _DATA	
+SPACE  . . . . . . . . . . . . .	Number	 0020h	 
+Set  . . . . . . . . . . . . . .	Byte	 008C	  _DATA	
+oldAX  . . . . . . . . . . . . .	Word	 0000	  _DATA	
+oldBP  . . . . . . . . . . . . .	Word	 000C	  _DATA	
+oldBX  . . . . . . . . . . . . .	Word	 0002	  _DATA	
+oldCX  . . . . . . . . . . . . .	Word	 0004	  _DATA	
+oldDI  . . . . . . . . . . . . .	Word	 000A	  _DATA	
+oldDX  . . . . . . . . . . . . .	Word	 0006	  _DATA	
+oldFL  . . . . . . . . . . . . .	Word	 0010	  _DATA	
+oldSI  . . . . . . . . . . . . .	Word	 0008	  _DATA	
+oldSP  . . . . . . . . . . . . .	Word	 000E	  _DATA	
+
+	   0 Warnings
+	   0 Errors

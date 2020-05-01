@@ -1,0 +1,4 @@
+	. Weight: 5
+	start	0
+first:	addr	a, b
+	end	first

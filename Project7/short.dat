@@ -1,0 +1,59 @@
+Hello! This is the user's guide for this version of DOSTunes
+
+My name is Nate, and I'm the programmer. As you can tell, this looks a lot like
+normal text. You're right! This is all just normal text.
+
+This is the first key point: Anything that is not a number in decimal notation,
+FFFFh for example, is completely ignored. A number in decimal, like 392, will be
+registered.
+
+In any sequence of numbers, it is important to note that everything is done in
+pairs. The first number is the frequency of the sound, in hertz, and the second
+is the length of the note in milliseconds.
+
+If you have eyes like an eagle, you will have noticed that I have already typed
+a number. So I'll include the timing, 500 ms, and we can continue to the demo.
+
+Thank you for reading this. Please, enjoy the DOS tune!
+
+A 440, 250 ms
+B 494, 500 ms
+A 440, 500 ms
+B 494, 250 ms
+C 523, 500 ms
+B 494, 250 ms
+A 440, 500 ms
+G 392, 500 ms
+G 392, 250 ms
+B 494, 500 ms
+A 440, 500 ms
+G 392, 500 ms
+B 494, 250 ms
+A 440, 1750 ms
+
+This is generally how I denote rests since this frequency cannot be played
+65535, 400 ms
+
+This lets me do a funky slide thing
+A 440, 50 ms
+C 523, 50 ms
+D 587, 450 ms
+
+B 494, 250 ms
+A 440, 500 ms
+B 494, 500 ms
+D 587, 250 ms
+C 523, 500 ms
+B 494, 250 ms
+A 440, 500 ms
+G 392, 500 ms
+G 392, 250 ms
+B 494, 500 ms
+A 440, 500 ms
+G 392, 500 ms
+B 494, 250 ms
+A 440, 1000 ms
+
+This is a bit of a fancier ending
+A 440, 750 ms
+G 392, 2000 ms
